@@ -30,6 +30,9 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 async function startServer() {
+  // Initialize Supabase player storage & run seed migration if table is empty
+  await playerStore.init();
+
   const app = express();
   const PORT = 3000;
 
@@ -178,10 +181,10 @@ async function startServer() {
   });
 
   // Get all players
-  app.get('/api/players', (req, res) => {
+  app.get('/api/players', async (req, res) => {
     try {
-      const allPlayers = playerStore.getAll();
-      const presets = playerStore.getAvailablePresets();
+      const allPlayers = await playerStore.getAll();
+      const presets = await playerStore.getAvailablePresets();
       res.json({ players: allPlayers, presets });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch players' });
@@ -216,7 +219,7 @@ async function startServer() {
         }
       }
 
-      const player = playerStore.addPlayer({
+      const player = await playerStore.addPlayer({
         name: name.trim(),
         nativeName: finalNative,
         currentTeam: finalTeam || 'Top Flight Club',
@@ -260,10 +263,10 @@ async function startServer() {
   });
 
   // Delete player (Admin Only)
-  app.delete('/api/players/:id', requireAdmin, (req, res) => {
+  app.delete('/api/players/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const removed = playerStore.removePlayer(id);
+      const removed = await playerStore.removePlayer(id);
       if (!removed) {
         return res.status(404).json({ error: 'Player not found' });
       }
@@ -275,11 +278,11 @@ async function startServer() {
   });
 
   // Update / Edit player (Admin Only)
-  app.put('/api/players/:id', requireAdmin, (req, res) => {
+  app.put('/api/players/:id', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const updates = req.body;
-      const updated = playerStore.updatePlayer(id, updates);
+      const updated = await playerStore.updatePlayer(id, updates);
       if (!updated) {
         return res.status(404).json({ error: 'Player not found' });
       }
@@ -291,10 +294,10 @@ async function startServer() {
   });
 
   // Toggle active state (Admin Only)
-  app.patch('/api/players/:id/toggle', requireAdmin, (req, res) => {
+  app.patch('/api/players/:id/toggle', requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
-      const updated = playerStore.togglePlayerActive(id);
+      const updated = await playerStore.togglePlayerActive(id);
       if (!updated) {
         return res.status(404).json({ error: 'Player not found' });
       }
@@ -305,13 +308,13 @@ async function startServer() {
   });
 
   // Import raw text list (Admin Only)
-  app.post('/api/players/import-text', requireAdmin, (req, res) => {
+  app.post('/api/players/import-text', requireAdmin, async (req, res) => {
     try {
       const { text } = req.body;
       if (!text || typeof text !== 'string') {
         return res.status(400).json({ error: 'Text content is required' });
       }
-      const result = playerStore.importFromText(text);
+      const result = await playerStore.importFromText(text);
       res.json({ success: true, added: result.added, total: result.total });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to import text' });
@@ -319,23 +322,23 @@ async function startServer() {
   });
 
   // Client roster persistent auto-recovery sync (Admin Only)
-  app.post('/api/players/sync-backup', requireAdmin, (req, res) => {
+  app.post('/api/players/sync-backup', requireAdmin, async (req, res) => {
     try {
       const { players } = req.body;
       if (!Array.isArray(players)) {
         return res.status(400).json({ error: 'Players array required' });
       }
-      const result = playerStore.syncFromClientBackup(players);
-      res.json({ success: true, ...result, players: playerStore.getAll() });
+      const result = await playerStore.syncFromClientBackup(players);
+      res.json({ success: true, ...result, players: await playerStore.getAll() });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to sync backup' });
     }
   });
 
   // Export raw text list
-  app.get('/api/players/export-text', (req, res) => {
+  app.get('/api/players/export-text', async (req, res) => {
     try {
-      const text = playerStore.exportToText();
+      const text = await playerStore.exportToText();
       res.setHeader('Content-Type', 'text/plain');
       res.send(text);
     } catch (err: any) {
@@ -347,7 +350,7 @@ async function startServer() {
   app.get('/api/fixtures', async (req, res) => {
     try {
       const { search, sport, playerId, timeframe, force } = req.query;
-      const players = playerStore.getActive();
+      const players = await playerStore.getActive();
       const allFixtures = await fetchAllActiveFixtures(players, force === 'true');
 
       let filtered = allFixtures;
@@ -412,7 +415,7 @@ async function startServer() {
   app.post('/api/fixtures/sync-live', async (req, res) => {
     try {
       clearPlayerFixtureCache();
-      const players = playerStore.getActive();
+      const players = await playerStore.getActive();
       const allFixtures = await fetchAllActiveFixtures(players, true);
       res.json({
         success: true,
@@ -433,7 +436,7 @@ async function startServer() {
   app.get('/api/fixtures/player/:id', async (req, res) => {
     try {
       const { id } = req.params;
-      const player = playerStore.getById(id);
+      const player = await playerStore.getById(id);
       if (!player) {
         return res.status(404).json({ error: 'Player not found' });
       }
