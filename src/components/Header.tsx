@@ -52,7 +52,7 @@ export function Header({
           </div>
           <div>
             <h1 className="text-base sm:text-lg font-bold tracking-tight text-white flex items-center gap-1.5">
-              SportsSync <span className="text-blue-400 font-semibold">Elite</span>
+              SportsSync <span className="text-blue-400 font-semibold">Elite</span> <span className="text-slate-500 text-xs">v2</span>
               <span className="hidden xs:inline-block text-[9px] sm:text-[10px] uppercase tracking-wider font-extrabold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
                 IL
               </span>
