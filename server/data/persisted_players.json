@@ -1,0 +1,20 @@
+[
+  {
+    "id": "manor-solomon",
+    "name": "Manor Solomon",
+    "nativeName": "מנור סולומון",
+    "sport": "football",
+    "currentTeam": "West Ham United",
+    "league": "English League Championship / Premier League",
+    "country": "Israel",
+    "position": "Left Wing (#14)",
+    "jerseyNumber": "14",
+    "photoUrl": "https://r2.thesportsdb.com/images/media/player/cutout/8xfxe41762889351.png",
+    "teamLogo": "https://r2.thesportsdb.com/images/media/team/badge/yutyxs1467459956.png",
+    "teamColor": "#7C2C3B",
+    "bio": "Dynamic Israeli international winger for West Ham United, known for clutch goals in English and European football.",
+    "isDemo": false,
+    "active": true,
+    "addedAt": "2026-08-29T00:00:00.000Z"
+  }
+]
