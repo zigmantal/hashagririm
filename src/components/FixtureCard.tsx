@@ -104,17 +104,27 @@ export function FixtureCard({ fixture, onOpenChannelsGuide }: FixtureCardProps) 
                   <span className={`px-2 py-0.5 rounded-md font-mono font-black text-xs border ${fixture.status === 'live' ? 'bg-rose-950 text-rose-300 border-rose-700 animate-pulse' : 'bg-slate-800 text-slate-200 border-slate-700'}`}>
                     {fixture.liveScore?.home ?? fixture.homeTeam.score} - {fixture.liveScore?.away ?? fixture.awayTeam.score}
                   </span>
-                  <span className="text-[9px] text-slate-400 mt-0.5 font-bold">
-                    {fixture.status === 'live' ? (fixture.liveScore?.period || 'LIVE') : 'FINAL'}
-                  </span>
+                  {fixture.status === 'live' ? (
+                    <span className="text-[9px] text-rose-400 mt-0.5 font-bold whitespace-nowrap">
+                      {fixture.liveScore?.period || fixture.liveClock || 'LIVE'}
+                    </span>
+                  ) : fixture.status === 'finished' ? (
+                    <span className="text-[9px] text-slate-400 mt-0.5 font-bold whitespace-nowrap">
+                      FINAL • {formatted.timeStr} IDT
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-slate-400 mt-0.5 font-medium whitespace-nowrap">
+                      {formatted.timeStr} IDT
+                    </span>
+                  )}
                 </div>
               ) : (
                 <>
                   <span className="px-2 py-1 rounded-md bg-slate-800 text-slate-300 font-mono font-black text-xs border border-slate-700">
-                    VS
+                    {fixture.status === 'finished' ? 'FT' : 'VS'}
                   </span>
                   <span className="text-[10px] text-slate-400 mt-1 font-medium whitespace-nowrap">
-                    {formatted.timeStr} IDT
+                    {fixture.status === 'finished' ? `FINAL • ${formatted.timeStr} IDT` : `${formatted.timeStr} IDT`}
                   </span>
                 </>
               )}

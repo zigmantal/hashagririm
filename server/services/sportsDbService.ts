@@ -1,4 +1,4 @@
-import { MatchFixture, Player, SportType } from '../../src/types';
+import { MatchFixture, Player, SportType, MatchStatus } from '../../src/types';
 import { resolveIsraeliBroadcast } from './israeliBroadcastService';
 
 interface TheSportsDbPlayer {
@@ -45,6 +45,26 @@ interface TheSportsDbEvent {
   intHomeScore?: string | null;
   intAwayScore?: string | null;
   strStatus?: string;
+}
+
+function parseScore(val: any): number | undefined {
+  if (val === null || val === undefined) return undefined;
+  if (typeof val === 'number') return isNaN(val) ? undefined : val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed === '') return undefined;
+    const num = parseInt(trimmed, 10);
+    return isNaN(num) ? undefined : num;
+  }
+  if (typeof val === 'object') {
+    if (val.value !== undefined && val.value !== null) {
+      return parseScore(val.value);
+    }
+    if (val.displayValue !== undefined && val.displayValue !== null) {
+      return parseScore(val.displayValue);
+    }
+  }
+  return undefined;
 }
 
 function mapSportsDbSport(sportStr?: string): SportType {
@@ -164,18 +184,57 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
     const team: TheSportsDbTeam = teamData.teams[0];
     const teamId = team.idTeam;
 
-    // 2. Fetch next events
-    const eventsUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
-    const evRes = await fetch(eventsUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
-    if (!evRes.ok) return null;
+    // 2. Fetch both upcoming events and recent events
+    let rawEvents: TheSportsDbEvent[] = [];
 
-    const evData = await evRes.json();
-    if (!evData.events || !Array.isArray(evData.events) || evData.events.length === 0) {
+    // Next upcoming events
+    try {
+      const eventsUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
+      const evRes = await fetch(eventsUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
+      if (evRes.ok) {
+        const evData = await evRes.json();
+        if (evData.events && Array.isArray(evData.events)) {
+          rawEvents.push(...evData.events);
+        }
+      }
+    } catch (err) {
+      console.warn('TSDB eventsnext error:', err);
+    }
+
+    // Last recent events (to capture games completed today or within last 3 days)
+    try {
+      const lastUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
+      const lastRes = await fetch(lastUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
+      if (lastRes.ok) {
+        const lastData = await lastRes.json();
+        const results = lastData.results || lastData.events;
+        if (results && Array.isArray(results)) {
+          const threeDaysAgo = Date.now() - 3 * 24 * 60 * 60 * 1000;
+          const recentFinished = results.filter((ev: any) => {
+            const evDate = new Date(ev.dateEvent || ev.strTimestamp).getTime();
+            return !isNaN(evDate) && evDate >= threeDaysAgo;
+          });
+          rawEvents.push(...recentFinished);
+        }
+      }
+    } catch (err) {
+      console.warn('TSDB eventslast error:', err);
+    }
+
+    // Deduplicate by idEvent
+    const uniqueEventsMap = new Map<string, TheSportsDbEvent>();
+    for (const ev of rawEvents) {
+      if (ev.idEvent) {
+        uniqueEventsMap.set(ev.idEvent, ev);
+      }
+    }
+    const events = Array.from(uniqueEventsMap.values()).slice(0, 8);
+
+    if (events.length === 0) {
       return null;
     }
 
     const fixtures: MatchFixture[] = [];
-    const events: TheSportsDbEvent[] = evData.events.slice(0, 5);
 
     for (const ev of events) {
       const isHome = (ev.strHomeTeam || '').toLowerCase().includes(player.currentTeam.toLowerCase());
@@ -188,18 +247,48 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
       const dateObj = new Date(dateStr);
       const isoDate = isNaN(dateObj.getTime()) ? new Date().toISOString() : dateObj.toISOString();
 
+      const homeScore = parseScore(ev.intHomeScore);
+      const awayScore = parseScore(ev.intAwayScore);
+
+      const rawStatus = (ev.strStatus || '').toUpperCase().trim();
+      const matchTimestamp = new Date(isoDate).getTime();
+      const isPast = matchTimestamp + 2 * 60 * 60 * 1000 < Date.now();
+
+      const isFinished = ['FT', 'AOT', 'AP', 'MATCH FINISHED', 'FINAL', 'FINISHED', 'POST'].some(s => rawStatus.includes(s)) ||
+        (homeScore !== undefined && awayScore !== undefined && (rawStatus === 'FT' || isPast));
+
+      const isLive = !isFinished && ['1H', '2H', 'HT', 'LIVE', 'IN PROGRESS', 'Q1', 'Q2', 'Q3', 'Q4', 'OT'].some(s => rawStatus.includes(s));
+
+      let status: MatchStatus = 'scheduled';
+      let liveClock: string | undefined = undefined;
+      let liveScore: { home: number; away: number; period?: string } | undefined = undefined;
+
+      if (isLive) {
+        status = 'live';
+        liveClock = ev.strStatus || 'LIVE';
+        if (homeScore !== undefined && awayScore !== undefined) {
+          liveScore = {
+            home: homeScore,
+            away: awayScore,
+            period: ev.strStatus || 'LIVE'
+          };
+        }
+      } else if (isFinished) {
+        status = 'finished';
+      }
+
       const homeTeam = {
         name: ev.strHomeTeam || player.currentTeam,
         shortName: (ev.strHomeTeam || '').slice(0, 3).toUpperCase(),
-        logo: isHome ? (team.strBadge || player.teamLogo) : 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png',
-        score: ev.intHomeScore ? parseInt(ev.intHomeScore, 10) : undefined,
+        logo: isHome ? (team.strBadge || player.teamLogo) : (ev.strThumb || 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png'),
+        score: homeScore,
       };
 
       const awayTeam = {
         name: ev.strAwayTeam || 'Opponent',
         shortName: (ev.strAwayTeam || '').slice(0, 3).toUpperCase(),
-        logo: !isHome ? (team.strBadge || player.teamLogo) : 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png',
-        score: ev.intAwayScore ? parseInt(ev.intAwayScore, 10) : undefined,
+        logo: !isHome ? (team.strBadge || player.teamLogo) : (ev.strThumb || 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png'),
+        score: awayScore,
       };
 
       const competition = ev.strLeague || player.league || 'Official Championship';
@@ -230,7 +319,9 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
           country: ev.strCountry || team.strCountry || 'International'
         },
         broadcast,
-        status: 'scheduled',
+        status,
+        liveClock,
+        liveScore,
         dataSource: 'sportsdb_live',
         notes: `Official fixture via TheSportsDB live calendar.`,
         importanceLevel: /derby|clash|final|cup|champions/i.test(`${ev.strHomeTeam} ${ev.strAwayTeam} ${competition}`) ? 'derby' : 'standard',

@@ -131,6 +131,26 @@ export const ESPN_KNOWN_TEAMS: Record<string, { league: string; teamId: string; 
   'dallas mavericks': { league: 'basketball/nba', teamId: '6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/dal.png' },
 };
 
+function parseScore(val: any): number | undefined {
+  if (val === null || val === undefined) return undefined;
+  if (typeof val === 'number') return isNaN(val) ? undefined : val;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (trimmed === '') return undefined;
+    const num = parseInt(trimmed, 10);
+    return isNaN(num) ? undefined : num;
+  }
+  if (typeof val === 'object') {
+    if (val.value !== undefined && val.value !== null) {
+      return parseScore(val.value);
+    }
+    if (val.displayValue !== undefined && val.displayValue !== null) {
+      return parseScore(val.displayValue);
+    }
+  }
+  return undefined;
+}
+
 function normalizeText(text: string): string {
   return (text || '').toLowerCase().trim().replace(/[-_]/g, ' ');
 }
@@ -227,39 +247,46 @@ export async function fetchEspnLiveSchedule(player: Player): Promise<MatchFixtur
       const normPlayerTeam = normalizeText(player.currentTeam);
       const isHome = normalizeText(homeName).includes(normPlayerTeam) || normPlayerTeam.includes(normalizeText(homeName));
 
+      const homeScore = parseScore(homeComp.score);
+      const awayScore = parseScore(awayComp.score);
+
       const homeTeam = {
         name: homeName,
         shortName: homeComp.team?.abbreviation || homeName.substring(0, 3).toUpperCase(),
         logo: homeComp.team?.logo || (isHome ? player.teamLogo : 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png'),
-        score: homeComp.score ? parseInt(homeComp.score.displayValue || homeComp.score, 10) : undefined,
+        score: homeScore,
       };
 
       const awayTeam = {
         name: awayName,
         shortName: awayComp.team?.abbreviation || awayName.substring(0, 3).toUpperCase(),
         logo: awayComp.team?.logo || (!isHome ? player.teamLogo : 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png'),
-        score: awayComp.score ? parseInt(awayComp.score.displayValue || awayComp.score, 10) : undefined,
+        score: awayScore,
       };
 
       const opponentTeam = isHome ? awayTeam : homeTeam;
 
       // Status resolution
-      const rawStatusState = event.status?.type?.state || competition.status?.type?.state || 'pre';
+      const statusType = event.status?.type || competition.status?.type || {};
+      const rawStatusState = statusType.state || event.status?.state || competition.status?.state || 'pre';
+      const isCompleted = statusType.completed === true || rawStatusState === 'post' || /final|full_time|ft|post/i.test(statusType.name || '') || (homeScore !== undefined && awayScore !== undefined && new Date(event.date).getTime() + 2 * 60 * 60 * 1000 < Date.now());
+      const isInProgress = !isCompleted && (rawStatusState === 'in' || /in_progress|halftime|ht|live|q1|q2|q3|q4|1h|2h/i.test(statusType.name || ''));
+
       let status: MatchStatus = 'scheduled';
       let liveClock: string | undefined = undefined;
       let liveScore: { home: number; away: number; period?: string } | undefined = undefined;
 
-      if (rawStatusState === 'in') {
+      if (isInProgress) {
         status = 'live';
-        liveClock = event.status?.type?.detail || event.status?.displayClock || 'LIVE';
-        if (homeTeam.score !== undefined && awayTeam.score !== undefined) {
+        liveClock = statusType.detail || statusType.shortDetail || event.status?.displayClock || competition.status?.displayClock || 'LIVE';
+        if (homeScore !== undefined && awayScore !== undefined) {
           liveScore = {
-            home: homeTeam.score,
-            away: awayTeam.score,
-            period: event.status?.type?.shortDetail || 'LIVE'
+            home: homeScore,
+            away: awayScore,
+            period: statusType.shortDetail || statusType.detail || 'LIVE'
           };
         }
-      } else if (rawStatusState === 'post') {
+      } else if (isCompleted) {
         status = 'finished';
       }
 

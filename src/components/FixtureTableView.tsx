@@ -114,17 +114,21 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
                     onClick={() => toggleExpand(fixture.id)}
                     className="px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-1.5 sm:gap-3 cursor-pointer text-xs select-none"
                   >
-                    {/* 1. Time */}
-                    <div className="shrink-0 w-12 sm:w-14 font-mono font-bold text-slate-100 text-left">
+                    {/* 1. Time & Score Status */}
+                    <div className="shrink-0 w-14 sm:w-16 font-mono font-bold text-slate-100 text-left">
                       <div className="flex items-center gap-1">
                         <Clock className="w-3 h-3 text-blue-400 hidden xs:inline shrink-0" />
                         <span>{formatted.timeStr}</span>
                       </div>
-                      {fixture.status === 'live' && (
+                      {fixture.status === 'live' ? (
                         <span className="inline-block text-[8px] font-black uppercase text-rose-400 animate-pulse">
-                          LIVE
+                          {fixture.liveScore ? `${fixture.liveScore.home}-${fixture.liveScore.away} • LIVE` : 'LIVE'}
                         </span>
-                      )}
+                      ) : (fixture.liveScore || (fixture.homeTeam.score !== undefined && fixture.awayTeam.score !== undefined)) ? (
+                        <span className="inline-block text-[8px] font-black uppercase text-emerald-400">
+                          {fixture.liveScore?.home ?? fixture.homeTeam.score}-{fixture.liveScore?.away ?? fixture.awayTeam.score} • FT
+                        </span>
+                      ) : null}
                     </div>
 
                     {/* Divider */}
