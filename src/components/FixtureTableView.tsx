@@ -107,6 +107,13 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
               const isHome = fixture.homeTeam.name === fixture.playerTeam;
               const opponent = isHome ? fixture.awayTeam.name : fixture.homeTeam.name;
 
+              const playerScore = isHome
+                ? (fixture.liveScore?.home ?? fixture.homeTeam.score)
+                : (fixture.liveScore?.away ?? fixture.awayTeam.score);
+              const opponentScore = isHome
+                ? (fixture.liveScore?.away ?? fixture.awayTeam.score)
+                : (fixture.liveScore?.home ?? fixture.homeTeam.score);
+
               return (
                 <div key={fixture.id} className="transition-colors hover:bg-slate-800/40">
                   {/* Compact Single Row */}
@@ -122,11 +129,11 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
                       </div>
                       {fixture.status === 'live' ? (
                         <span className="inline-block text-[8px] font-black uppercase text-rose-400 animate-pulse">
-                          {fixture.liveScore ? `${fixture.liveScore.home}-${fixture.liveScore.away} • LIVE` : 'LIVE'}
+                          {fixture.liveScore ? `${playerScore}-${opponentScore} • LIVE` : 'LIVE'}
                         </span>
                       ) : (fixture.liveScore || (fixture.homeTeam.score !== undefined && fixture.awayTeam.score !== undefined)) ? (
                         <span className="inline-block text-[8px] font-black uppercase text-emerald-400">
-                          {fixture.liveScore?.home ?? fixture.homeTeam.score}-{fixture.liveScore?.away ?? fixture.awayTeam.score} • FT
+                          {playerScore}-{opponentScore} • FT
                         </span>
                       ) : null}
                     </div>
