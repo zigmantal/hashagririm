@@ -29,6 +29,7 @@ export default function App() {
 
   // Modals
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [adminInitialTab, setAdminInitialTab] = useState<'roster' | 'add' | 'text'>('roster');
   const [isChannelsModalOpen, setIsChannelsModalOpen] = useState(false);
 
   // Filters State - Default to Coming 7 Days
@@ -306,8 +307,9 @@ export default function App() {
     return await res.text();
   };
 
-  const handleOpenAddAthletes = () => {
+  const handleOpenAdmin = (tab: 'roster' | 'add' | 'text' = 'roster') => {
     requireAdminAction(() => {
+      setAdminInitialTab(tab);
       setIsAdminOpen(true);
     });
   };
@@ -317,7 +319,7 @@ export default function App() {
       
       {/* Top Navbar */}
       <Header
-        onOpenAdmin={handleOpenAddAthletes}
+        onOpenAdmin={() => handleOpenAdmin('add')}
         onOpenChannelsGuide={() => setIsChannelsModalOpen(true)}
         onRefresh={() => loadFixtures(true)}
         isRefreshing={isRefreshing}
@@ -335,7 +337,7 @@ export default function App() {
             players={players}
             selectedPlayerId={selectedPlayerId}
             onSelectPlayer={handleSelectPlayer}
-            onOpenAdmin={handleOpenAddAthletes}
+            onOpenAdmin={() => handleOpenAdmin('roster')}
             onOpenChannelsGuide={() => setIsChannelsModalOpen(true)}
           />
         </div>
@@ -346,7 +348,7 @@ export default function App() {
             players={players}
             selectedPlayerId={selectedPlayerId}
             onSelectPlayer={handleSelectPlayer}
-            onOpenAdmin={handleOpenAddAthletes}
+            onOpenAdmin={() => handleOpenAdmin('roster')}
           />
         </div>
 
@@ -464,7 +466,7 @@ export default function App() {
                   Clear Filters
                 </button>
                 <button
-                  onClick={handleOpenAddAthletes}
+                  onClick={() => handleOpenAdmin('add')}
                   className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold transition cursor-pointer"
                 >
                   + Add / Import Athletes
@@ -518,6 +520,7 @@ export default function App() {
       <AdminModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
+        initialTab={adminInitialTab}
         players={players}
         presets={presets}
         onAddPlayer={handleAddPlayer}

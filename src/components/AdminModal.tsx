@@ -1,10 +1,11 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { Player, SportType } from '../types';
-import { X, UserPlus, FileText, Check, Trash2, Search, Sparkles, AlertCircle, RefreshCw, Upload, Download, Dribbble, Shield, Edit3, Tv } from 'lucide-react';
+import { X, UserPlus, FileText, Check, Trash2, Search, Sparkles, AlertCircle, RefreshCw, Upload, Download, Dribbble, Shield, Edit3, Tv, ExternalLink } from 'lucide-react';
 
 interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialTab?: 'roster' | 'add' | 'text';
   players: Player[];
   presets: Player[];
   onAddPlayer: (playerData: any) => Promise<void>;
@@ -18,6 +19,7 @@ interface AdminModalProps {
 export function AdminModal({
   isOpen,
   onClose,
+  initialTab = 'roster',
   players,
   presets,
   onAddPlayer,
@@ -27,7 +29,13 @@ export function AdminModal({
   onImportText,
   onExportText,
 }: AdminModalProps) {
-  const [activeTab, setActiveTab] = useState<'roster' | 'add' | 'text'>('roster');
+  const [activeTab, setActiveTab] = useState<'roster' | 'add' | 'text'>(initialTab ?? 'roster');
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab ?? 'roster');
+    }
+  }, [isOpen, initialTab]);
   
   // Add Player State
   const [searchName, setSearchName] = useState('');
@@ -544,9 +552,20 @@ export function AdminModal({
           {activeTab === 'add' && (
             <form onSubmit={handleCreatePlayer} className="space-y-4">
               <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Athlete Name (Auto-Detect Team & Sport)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Athlete Name (Auto-Detect Team & Sport)
+                  </label>
+                  <a
+                    href="https://www.transfermarkt.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-slate-400 hover:text-blue-400 transition flex items-center gap-1"
+                  >
+                    <span>Look up on Transfermarkt</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="text"
