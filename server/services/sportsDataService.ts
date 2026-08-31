@@ -2713,12 +2713,23 @@ export async function fetchPlayerFixtures(player: Player, forceRefresh = false):
 }
 
 export async function fetchAllActiveFixtures(players: Player[], forceRefresh = false): Promise<MatchFixture[]> {
-  const allFixtures: MatchFixture[] = [];
+  const activePlayers = players.filter((p) => p.active);
 
-  for (const player of players) {
-    if (player.active) {
-      const list = await fetchPlayerFixtures(player, forceRefresh);
-      allFixtures.push(...list);
+  const results = await Promise.allSettled(
+    activePlayers.map(async (player) => {
+      try {
+        return await fetchPlayerFixtures(player, forceRefresh);
+      } catch (err) {
+        console.error(`[SportsDataService] Error fetching fixtures for ${player.name} (${player.id}):`, err);
+        return [];
+      }
+    })
+  );
+
+  const allFixtures: MatchFixture[] = [];
+  for (const result of results) {
+    if (result.status === 'fulfilled' && Array.isArray(result.value)) {
+      allFixtures.push(...result.value);
     }
   }
 
