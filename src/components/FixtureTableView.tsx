@@ -176,17 +176,25 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
 
                     {/* 4. Channel & Expand Arrow */}
                     <div className="shrink-0 flex items-center gap-1 sm:gap-2 justify-end">
-                      <span
-                        className="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold truncate max-w-[85px] sm:max-w-[120px] text-center border shadow-xs"
-                        style={{
-                          backgroundColor: `${fixture.broadcast.badgeBg}25`,
-                          borderColor: `${fixture.broadcast.badgeBg}60`,
-                          color: '#F8FAFC',
-                        }}
-                        title={fixture.broadcast.hebrewName}
-                      >
-                        {fixture.broadcast.channelName}
-                      </span>
+                      {fixture.broadcast.confirmed === false ? (
+                        <span
+                          className="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold truncate max-w-[85px] sm:max-w-[120px] text-center border border-dashed border-slate-600 text-slate-400"
+                        >
+                          TBD
+                        </span>
+                      ) : (
+                        <span
+                          className="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold truncate max-w-[85px] sm:max-w-[120px] text-center border shadow-xs"
+                          style={{
+                            backgroundColor: `${fixture.broadcast.badgeBg}25`,
+                            borderColor: `${fixture.broadcast.badgeBg}60`,
+                            color: '#F8FAFC',
+                          }}
+                          title={fixture.broadcast.hebrewName}
+                        >
+                          {fixture.broadcast.channelName}
+                        </span>
+                      )}
 
                       <button
                         type="button"
@@ -205,17 +213,25 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
                   {isExpanded && (
                     <div className="px-3 sm:px-4 py-2.5 bg-slate-900/80 border-t border-slate-800 text-xs text-slate-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
                       <div className="space-y-1 text-[11px] sm:text-xs">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-bold text-slate-200">Channel:</span>
-                          <span className="text-blue-400 font-semibold">{fixture.broadcast.hebrewName}</span>
-                          <span className="text-slate-400">({fixture.broadcast.networkGroup})</span>
-                        </div>
-                        <div className="text-slate-400 flex items-center gap-1.5 flex-wrap">
-                          <span>Channel Numbers:</span>
-                          <span className="text-slate-200 font-medium">
-                            HOT {fixture.broadcast.channelNumberHot} • YES {fixture.broadcast.channelNumberYes} • Partner {fixture.broadcast.channelNumberPartner || fixture.broadcast.channelNumberHot} • Cellcom {fixture.broadcast.channelNumberCellcom || fixture.broadcast.channelNumberHot}
-                          </span>
-                        </div>
+                        {fixture.broadcast.confirmed === false ? (
+                          <div className="flex items-center gap-1.5 text-slate-400 italic">
+                            <span>TV channel not yet confirmed — check closer to kickoff</span>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-200">Channel:</span>
+                              <span className="text-blue-400 font-semibold">{fixture.broadcast.hebrewName}</span>
+                              <span className="text-slate-400">({fixture.broadcast.networkGroup})</span>
+                            </div>
+                            <div className="text-slate-400 flex items-center gap-1.5 flex-wrap">
+                              <span>Channel Numbers:</span>
+                              <span className="text-slate-200 font-medium">
+                                HOT {fixture.broadcast.channelNumberHot} • YES {fixture.broadcast.channelNumberYes} • Partner {fixture.broadcast.channelNumberPartner || fixture.broadcast.channelNumberHot} • Cellcom {fixture.broadcast.channelNumberCellcom || fixture.broadcast.channelNumberHot}
+                              </span>
+                            </div>
+                          </>
+                        )}
                         <div className="flex items-center gap-1 text-slate-400">
                           <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
                           <span>Venue: {fixture.venue.name} ({fixture.venue.city})</span>

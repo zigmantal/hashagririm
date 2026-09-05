@@ -1,5 +1,142 @@
 import { IsraeliBroadcastInfo, NetworkGroup, BroadcastChannelGuide } from '../../src/types';
 
+/**
+ * Maps a Yes broadcast-schedule channel *title* (as returned by the Yes API / stored in the
+ * Supabase `broadcast_channels` table, e.g. "Sport 5 HD (55)", "Sport 1 HD") onto our existing
+ * ISRAELI_CHANNELS_GUIDE entries, so that once yesBroadcastService confirms a real fixture-to-
+ * channel match we can still show the familiar HOT/YES/Partner/Cellcom numbers and badge colors.
+ *
+ * Keys are normalized (lowercased, parenthetical numbers stripped, punctuation collapsed).
+ */
+const YES_TITLE_TO_GUIDE_ID: Record<string, string> = {
+  'sport 5 hd': 'sport5',
+  'sport 5': 'sport5',
+  'sport 5 live hd': 'sport5-live',
+  'sport 5 live': 'sport5-live',
+  'sport 5 stars hd': 'sport5-stars',
+  'sport 5 stars': 'sport5-stars',
+  'sport 5+ hd': 'sport5-plus',
+  'sport 5 plus': 'sport5-plus',
+  'sport 5 4k': 'sport5-4k',
+  'sport 1 hd': 'sport1',
+  'sport 1': 'sport1',
+  'sport 2 hd': 'sport2',
+  'sport 2': 'sport2',
+  'sport 3 hd': 'sport3',
+  'sport 3': 'sport3',
+  'sport 4 hd': 'sport4',
+  'sport 4': 'sport4',
+  'one hd': 'one',
+  'one': 'one',
+  'one2 hd': 'one2',
+  'one2': 'one2',
+  'kan 11': 'kan11',
+  'makan 33': 'kan11',
+  'eurosport hd': 'eurosport1',
+  'eurosport': 'eurosport1',
+  'eurosport 1': 'eurosport1',
+  'eurosport ip hd ssr sd': 'eurosport1', // confirmed real Yes title for PT39
+};
+
+function normalizeYesTitle(title: string): { key: string; parenNumber?: string } {
+  const parenMatch = title.match(/\((\d+)\)/);
+  const key = title
+    .toLowerCase()
+    .replace(/\(\d+\)/g, '')
+    .replace(/[^a-z0-9+\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return { key, parenNumber: parenMatch?.[1] };
+}
+
+/**
+ * Looks up (or synthesizes) a BroadcastChannelGuide-shaped record for a given real Yes channel
+ * title. Falls back to a generic "Sport 5 family" styled entry (using the channel's own
+ * parenthetical number if present) for channels not in ISRAELI_CHANNELS_GUIDE yet, e.g.
+ * "Sport 5 Gold (57)", "Eurosport 2", "Sport TOGO 1/2" — this way new Yes channels never
+ * silently disappear, they just render with a best-effort generic style until someone adds
+ * them explicitly to ISRAELI_CHANNELS_GUIDE above.
+ */
+export function findChannelGuideByYesTitle(yesTitle: string): BroadcastChannelGuide {
+  const { key, parenNumber } = normalizeYesTitle(yesTitle);
+  const guideId = YES_TITLE_TO_GUIDE_ID[key];
+  const existing = guideId ? ISRAELI_CHANNELS_GUIDE.find((c) => c.id === guideId) : undefined;
+  if (existing) {
+    // Prefer the number embedded in the live Yes title when we have one (it's authoritative),
+    // otherwise fall back to whatever's in the static guide.
+    const num = parenNumber || existing.hotNumber;
+    return { ...existing, hotNumber: num, yesNumber: num, partnerNumber: num, cellcomNumber: num };
+  }
+
+  // Generic fallback for channels not yet in the static guide
+  const isEurosport = key.includes('eurosport');
+  const isTogo = key.includes('togo');
+  const num = parenNumber || '';
+  return {
+    id: `yes-${key.replace(/\s+/g, '-')}`,
+    name: yesTitle,
+    hebrewName: yesTitle,
+    group: isEurosport ? 'EuroSport' : isTogo ? 'Streaming' : 'Sport 5',
+    hotNumber: num,
+    yesNumber: num,
+    partnerNumber: num,
+    cellcomNumber: num,
+    competitions: [],
+    color: isEurosport ? '#059669' : isTogo ? '#000000' : '#0055A5',
+    freeToAir: false,
+  };
+}
+
+/**
+ * Builds a confirmed IsraeliBroadcastInfo from a real Yes broadcast-schedule match.
+ */
+export function buildConfirmedBroadcast(
+  channelTitle: string,
+  programTitle: string,
+  programDescription?: string
+): IsraeliBroadcastInfo {
+  const guide = findChannelGuideByYesTitle(channelTitle);
+  return {
+    channelName: guide.name,
+    hebrewName: guide.hebrewName,
+    networkGroup: guide.group,
+    channelNumberHot: guide.hotNumber,
+    channelNumberYes: guide.yesNumber,
+    channelNumberPartner: guide.partnerNumber,
+    channelNumberCellcom: guide.cellcomNumber,
+    badgeBg: guide.color,
+    badgeTextColor: '#FFFFFF',
+    borderColor: guide.color,
+    isFreeToAir: guide.freeToAir,
+    descriptionHebrew: programDescription,
+    commentaryHebrew: true,
+    confirmed: true,
+    sourceProgramTitle: programTitle,
+  };
+}
+
+/**
+ * Broadcast placeholder for when no real Yes match was found. Per product decision, we do NOT
+ * fall back to the old league-name-based guessing here — the channel is left explicitly blank
+ * and the UI shows a "not yet confirmed" state instead of a possibly-wrong guess.
+ */
+export function buildUnconfirmedBroadcast(): IsraeliBroadcastInfo {
+  return {
+    channelName: '',
+    hebrewName: '',
+    networkGroup: 'TBD',
+    channelNumberHot: '',
+    channelNumberYes: '',
+    channelNumberPartner: '',
+    channelNumberCellcom: '',
+    badgeBg: '#334155',
+    badgeTextColor: '#94A3B8',
+    borderColor: '#334155',
+    isFreeToAir: false,
+    confirmed: false,
+  };
+}
+
 export const ISRAELI_CHANNELS_GUIDE: BroadcastChannelGuide[] = [
   {
     id: 'sport5',

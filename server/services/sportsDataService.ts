@@ -1,6 +1,7 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { MatchFixture, Player, SportType } from '../../src/types';
 import { resolveIsraeliBroadcast } from './israeliBroadcastService';
+import { resolveBroadcastsForFixtures } from './yesBroadcastService';
 import { POPULAR_PRESET_PLAYERS } from '../data/defaultPlayers';
 import { fetchEspnLiveSchedule, fetchSearchGroundedFixtures, isGeminiRateLimited, setGeminiRateLimited } from './liveSportsService';
 import { searchPlayerOnTheSportsDb, fetchTheSportsDbUpcomingEvents } from './sportsDbService';
@@ -2601,45 +2602,47 @@ export async function fetchPlayerFixtures(player: Player, forceRefresh = false):
   let fixtures: MatchFixture[] = [];
 
   // 1. Attempt TheSportsDB Official Live Event Schedule API
-  try {
-    const tsdbFixtures = await fetchTheSportsDbUpcomingEvents(player);
-    if (tsdbFixtures && tsdbFixtures.length > 0) {
-      fixtures = tsdbFixtures;
-      fixturesCache.set(cacheKey, { fixtures, timestamp: Date.now() });
-      return fixtures;
+  if (fixtures.length === 0) {
+    try {
+      const tsdbFixtures = await fetchTheSportsDbUpcomingEvents(player);
+      if (tsdbFixtures && tsdbFixtures.length > 0) {
+        fixtures = tsdbFixtures;
+      }
+    } catch (err) {
+      console.warn(`TheSportsDB API fallback for ${player.name}:`, err);
     }
-  } catch (err) {
-    console.warn(`TheSportsDB API fallback for ${player.name}:`, err);
   }
 
   // 2. Attempt High-Speed Live ESPN Official Schedule / Scoreboard API
-  try {
-    const espnFixtures = await fetchEspnLiveSchedule(player);
-    if (espnFixtures && espnFixtures.length > 0) {
-      fixtures = espnFixtures;
-      fixturesCache.set(cacheKey, { fixtures, timestamp: Date.now() });
-      return fixtures;
+  if (fixtures.length === 0) {
+    try {
+      const espnFixtures = await fetchEspnLiveSchedule(player);
+      if (espnFixtures && espnFixtures.length > 0) {
+        fixtures = espnFixtures;
+      }
+    } catch (err) {
+      console.warn(`ESPN API fallback for ${player.name}:`, err);
     }
-  } catch (err) {
-    console.warn(`ESPN API fallback for ${player.name}:`, err);
   }
 
   // 3. Attempt Real-Time Google Search Grounding for unmapped / international leagues
-  try {
-    const searchFixtures = await fetchSearchGroundedFixtures(player);
-    if (searchFixtures && searchFixtures.length > 0) {
-      fixtures = searchFixtures;
-      fixturesCache.set(cacheKey, { fixtures, timestamp: Date.now() });
-      return fixtures;
+  if (fixtures.length === 0) {
+    try {
+      const searchFixtures = await fetchSearchGroundedFixtures(player);
+      if (searchFixtures && searchFixtures.length > 0) {
+        fixtures = searchFixtures;
+      }
+    } catch (err) {
+      console.warn(`Search grounding fallback for ${player.name}:`, err);
     }
-  } catch (err) {
-    console.warn(`Search grounding fallback for ${player.name}:`, err);
   }
 
   // 4. Fallback to Predefined Curated Schedule Templates
-  const templateList = SCHEDULE_TEMPLATES[player.currentTeam];
+  const templateList = fixtures.length === 0 ? SCHEDULE_TEMPLATES[player.currentTeam] : undefined;
 
-  if (templateList && templateList.length > 0) {
+  if (fixtures.length > 0) {
+    // Already resolved via TheSportsDB / ESPN / search grounding above; nothing to do here.
+  } else if (templateList && templateList.length > 0) {
     const baseDate = new Date();
     fixtures = templateList.map((tpl, idx) => {
       const matchDate = new Date(baseDate.getTime() + tpl.daysFromNow * 24 * 60 * 60 * 1000);
@@ -2706,6 +2709,16 @@ export async function fetchPlayerFixtures(player: Player, forceRefresh = false):
       ...f,
       dataSource: 'official_calendar' as const
     }));
+  }
+
+  // Resolve real Israeli broadcast channels against Yes's live schedule feed, overriding
+  // whatever placeholder `resolveIsraeliBroadcast` guess is currently sitting on each fixture
+  // (regardless of which source produced them above). Fixtures with no confident match are
+  // left explicitly unconfirmed rather than showing a possibly-wrong guess. Never throws.
+  try {
+    await resolveBroadcastsForFixtures(fixtures);
+  } catch (err) {
+    console.warn(`[SportsDataService] Yes broadcast resolution failed for ${player.name}:`, err);
   }
 
   fixturesCache.set(cacheKey, { fixtures, timestamp: Date.now() });
