@@ -417,7 +417,7 @@ interface WeeklyScheduleCacheEntry {
   timestamp: number;
 }
 let weeklyScheduleCache: WeeklyScheduleCacheEntry | null = null;
-const WEEKLY_TTL_MS = 1000 * 60 * 45; // 45 minutes
+const WEEKLY_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours (2x/day)
 
 export async function getWeeklySchedule(forceRefresh = false): Promise<WeeklyScheduleDay[]> {
   if (!forceRefresh && weeklyScheduleCache && Date.now() - weeklyScheduleCache.timestamp < WEEKLY_TTL_MS) {
