@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { playerStore } from './server/services/playerStore';
 import { fetchAllActiveFixtures, fetchPlayerFixtures, lookupAthleteDetails, clearPlayerFixtureCache } from './server/services/sportsDataService';
 import { ISRAELI_CHANNELS_GUIDE } from './server/services/israeliBroadcastService';
+import { getWeeklySchedule, refreshChannelsFromYes } from './server/services/yesBroadcastService';
 import { isAdminEmail, verifyAdminCredentials } from './server/config/adminConfig';
 
 dotenv.config();
@@ -450,6 +451,28 @@ async function startServer() {
   // Israeli TV Channels Guide
   app.get('/api/channels', (req, res) => {
     res.json({ channels: ISRAELI_CHANNELS_GUIDE });
+  });
+
+  // Full weekly TV schedule across all tracked Israeli sport channels (real Yes data),
+  // independent of which fixtures are currently tracked. Cached ~45 min server-side.
+  app.get('/api/schedule/weekly', async (req, res) => {
+    try {
+      const forceRefresh = req.query.refresh === 'true';
+      const days = await getWeeklySchedule(forceRefresh);
+      res.json({ days });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to fetch weekly schedule' });
+    }
+  });
+
+  // Admin-only: pull the latest channel list from Yes and upsert into broadcast_channels
+  app.post('/api/schedule/refresh-channels', requireAdmin, async (req, res) => {
+    try {
+      const result = await refreshChannelsFromYes();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to refresh channel list' });
+    }
   });
 
   // Vite middleware setup

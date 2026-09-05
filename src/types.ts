@@ -45,6 +45,32 @@ export interface IsraeliBroadcastInfo {
   descriptionHebrew?: string;
   studioPreShow?: string;
   commentaryHebrew?: boolean;
+  /**
+   * true  = matched against Yes's real broadcast-schedule feed for this exact fixture
+   * false = could not be confirmed against real data; channel fields are intentionally left blank
+   * undefined = legacy/rule-based guess (pre-Yes-integration data, kept only for backwards compat)
+   */
+  confirmed?: boolean;
+  /** The raw Yes programme title this fixture was matched against, for debugging/QA */
+  sourceProgramTitle?: string;
+}
+
+export interface WeeklyScheduleItem {
+  title: string;
+  description?: string;
+  startsUtc: string;
+  endsUtc: string;
+}
+
+export interface WeeklyScheduleChannel {
+  channelId: string;
+  title: string;
+  items: WeeklyScheduleItem[];
+}
+
+export interface WeeklyScheduleDay {
+  dateKey: string; // YYYY-MM-DD in Asia/Jerusalem
+  channels: WeeklyScheduleChannel[];
 }
 
 export interface MatchTeam {

@@ -8,6 +8,7 @@ import { FixtureCard } from './components/FixtureCard';
 import { FixtureTableView } from './components/FixtureTableView';
 import { AdminModal } from './components/AdminModal';
 import { IsraeliChannelsModal } from './components/IsraeliChannelsModal';
+import { WeeklyScheduleModal } from './components/WeeklyScheduleModal';
 import { GoogleLoginModal } from './components/GoogleLoginModal';
 import { useAuth } from './context/AuthContext';
 import { Calendar, Search, Users, Tv, RefreshCw, AlertCircle, LayoutList, LayoutGrid } from 'lucide-react';
@@ -31,6 +32,7 @@ export default function App() {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [adminInitialTab, setAdminInitialTab] = useState<'roster' | 'add' | 'text'>('roster');
   const [isChannelsModalOpen, setIsChannelsModalOpen] = useState(false);
+  const [isWeeklyScheduleOpen, setIsWeeklyScheduleOpen] = useState(false);
 
   // Filters State - Default to Coming 7 Days
   const [filters, setFilters] = useState<FilterOptions>({
@@ -512,6 +514,13 @@ export default function App() {
             >
               Israeli TV Channels Guide
             </button>
+            <span>•</span>
+            <button
+              onClick={() => setIsWeeklyScheduleOpen(true)}
+              className="text-blue-400 hover:underline cursor-pointer font-semibold"
+            >
+              View Full TV Schedule
+            </button>
           </div>
         </div>
       </footer>
@@ -535,6 +544,12 @@ export default function App() {
       <IsraeliChannelsModal
         isOpen={isChannelsModalOpen}
         onClose={() => setIsChannelsModalOpen(false)}
+      />
+
+      {/* Full Weekly TV Schedule Modal */}
+      <WeeklyScheduleModal
+        isOpen={isWeeklyScheduleOpen}
+        onClose={() => setIsWeeklyScheduleOpen(false)}
       />
 
       {/* Google Authentication Modal for Admin Privileges */}

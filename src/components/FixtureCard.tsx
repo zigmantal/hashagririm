@@ -175,6 +175,12 @@ export function FixtureCard({ fixture, onOpenChannelsGuide }: FixtureCardProps) 
 
       {/* Israeli TV Broadcasting Banner */}
       <div className="pt-2 border-t border-slate-700/80">
+        {fixture.broadcast.confirmed === false ? (
+          <div className="rounded-xl p-3 bg-slate-900 border border-dashed border-slate-700 shadow-inner text-xs text-slate-400 flex items-center gap-2">
+            <Tv className="w-3.5 h-3.5 shrink-0" />
+            <span>TV channel not yet confirmed — check closer to kickoff</span>
+          </div>
+        ) : (
         <div className="rounded-xl p-3 bg-slate-900 border border-slate-700/80 shadow-inner">
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <div className="flex items-center gap-2 flex-wrap">
@@ -215,6 +221,7 @@ export function FixtureCard({ fixture, onOpenChannelsGuide }: FixtureCardProps) 
             </div>
           )}
         </div>
+        )}
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between gap-2 mt-3 pt-1">
