@@ -290,17 +290,25 @@ export async function resolveBroadcastsForFixtures(fixtures: MatchFixture[]): Pr
     let best: ScheduleIndexEntry | null = null;
     let bestTimeDeltaMs = Infinity;
 
+    // Require a confident match on the TRACKED player's own team only — not the opponent too.
+    // The alias dictionary only covers ~40 well-known clubs; real fixtures constantly involve
+    // smaller/lower-league opponents (e.g. EFL Cup) that will never have a Hebrew alias entry.
+    // Requiring both sides matched meant almost nothing matched in practice. The player's own
+    // team is always one of our curated, aliased teams, so matching just that side plus a tight
+    // kickoff-time window (already narrowed to 3h below) is enough to identify the right
+    // broadcast without needing exhaustive opponent coverage.
+    const ownTeam = fixture.isHome ? fixture.homeTeam : fixture.awayTeam;
+
     for (const candidate of candidates) {
       const text = `${candidate.item.title} ${candidate.item.description || ''}`;
-      const homeMatches = teamMatchesText(fixture.homeTeam, text);
-      const awayMatches = teamMatchesText(fixture.awayTeam, text);
-      if (!homeMatches || !awayMatches) continue;
+      if (!teamMatchesText(ownTeam, text)) continue;
 
       const itemStart = new Date(candidate.item.starts).getTime();
       if (isNaN(itemStart)) continue;
       const delta = Math.abs(itemStart - fixtureDate.getTime());
       // Require the programme to start within 3 hours of kickoff to avoid matching a
-      // same-teams rerun/highlights show airing at a different time.
+      // same-team rerun/highlights show airing at a different time, or a different
+      // competition's match on the same day.
       if (delta > 3 * 60 * 60 * 1000) continue;
 
       if (delta < bestTimeDeltaMs) {
