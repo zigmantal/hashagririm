@@ -3,25 +3,20 @@ import { getSupabaseClient } from './playerStore';
 import { buildConfirmedBroadcast, buildUnconfirmedBroadcast } from './israeliBroadcastService';
 
 // ---------------------------------------------------------------------------
-// Yes broadcast-schedule API client
+// Yes broadcast-schedule data source
 // ---------------------------------------------------------------------------
-// This is Yes's own internal API. Usage here has been directly authorized by Yes for this
-// project. Confirmed live against real requests/responses (not guessed) on 2026-09-05:
+// IMPORTANT: this server (Cloud Run, europe-west2/London) CANNOT call svc.yes.co.il directly
+// — Yes's CloudFront CDN returns HTTP 403 for requests from non-Israeli datacenter IPs
+// (confirmed: x-amz-cf-pop LHR3-P3). Instead, a standalone script (scripts/fetch-yes-schedule.ts)
+// runs on a cron on a machine physically located in Israel, calls the real Yes API there, and
+// writes the raw results into the `yes_schedule_cache` Supabase table. Everything in this file
+// reads from that table — never calls svc.yes.co.il itself.
 //
-//   GET https://svc.yes.co.il/api/content/broadcast-schedule/channels?page=0&pageSize=1000
-//     -> { pageNumber, totalPages, totalItems, pageSize, items: [{ channelId, title, channelName, ... }] }
+// Confirmed real Yes response shape (as fetched from Israel, 2026-09-05), for reference —
+// this is what scripts/fetch-yes-schedule.ts stores verbatim in `yes_schedule_cache.items`:
 //   GET https://svc.yes.co.il/api/content/broadcast-schedule/channels/{CID}?date={Y-M-D}&ignorePastItems={bool}
 //     -> { items: [{ id, programId, title, description, imageUrl, starts, ends, channelId }] }
-//     (date is NOT zero-padded, e.g. "2026-9-6"; starts/ends are clean ISO-8601 UTC, e.g. "2026-09-05T21:30:00Z")
-//
-// IMPORTANT: the CDN in front of this API 404s (CloudFront "page not found" HTML, not a JSON
-// error) for requests with a non-browser-shaped User-Agent or missing Accept-Language — this
-// is a CDN/WAF-level filter, unrelated to whether the account-level usage is authorized. Do
-// not "clean up" the User-Agent below to look more like a well-behaved bot; it will break.
-
-const YES_BASE_URL = 'https://svc.yes.co.il/api/content/broadcast-schedule';
-
-const FETCH_TIMEOUT_MS = 8000;
+//     (starts/ends are clean ISO-8601 UTC, e.g. "2026-09-05T21:30:00Z")
 
 interface YesChannel {
   channelId: string;
@@ -36,98 +31,37 @@ interface YesScheduleItem {
   ends: string; // ISO-8601 UTC
 }
 
-async function yesFetch(path: string): Promise<any | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${YES_BASE_URL}${path}`, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Language': 'he-IL',
-        // Yes's CDN/WAF appears to filter on a browser-shaped User-Agent; a custom
-        // self-identifying UA (however honestly worded) gets a 404 from CloudFront before
-        // ever reaching the real API. Confirmed working UA below, verified against a real
-        // request/response by the project owner directly against svc.yes.co.il.
-        'User-Agent': 'Mozilla/5.0 (Linux; Linux x86_64) AppleWebKit/600.3 (KHTML, like Gecko) Chrome/48.0.2544.291 Safari/600',
-      },
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      console.warn(`[YesBroadcast] Request failed (${res.status}) for ${path}`);
-      return null;
-    }
-    return await res.json();
-  } catch (err: any) {
-    console.warn(`[YesBroadcast] Request error for ${path}:`, err?.message || err);
-    return null;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/** Defensively extracts an array of items regardless of exact wrapper shape. */
-function extractArray(json: any, ...keys: string[]): any[] {
-  if (Array.isArray(json)) return json;
-  if (!json || typeof json !== 'object') return [];
-  for (const key of keys) {
-    if (Array.isArray(json[key])) return json[key];
-  }
-  // Last resort: look one level deeper (e.g. { data: { items: [...] } })
-  for (const val of Object.values(json)) {
-    if (Array.isArray(val)) return val as any[];
-    if (val && typeof val === 'object') {
-      for (const key of keys) {
-        if (Array.isArray((val as any)[key])) return (val as any)[key];
-      }
-    }
-  }
-  return [];
-}
-
-async function fetchYesChannelList(): Promise<YesChannel[]> {
-  const json = await yesFetch('/channels?page=0&pageSize=1000');
-  if (!json) return [];
-  const raw = extractArray(json, 'channels', 'items', 'results');
-  return raw
-    .map((c: any) => ({
-      channelId: String(c.channelId ?? c.channelID ?? c.id ?? '').trim(),
-      title: String(c.title ?? c.name ?? '').trim(),
-    }))
-    .filter((c) => c.channelId && c.title);
-}
-
-function formatYesDate(d: Date): string {
-  // Yes expects the date in the Asia/Jerusalem calendar day, NOT zero-padded: "2026-9-5"
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Jerusalem',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-  }).formatToParts(d);
-  const y = parts.find((p) => p.type === 'year')?.value;
-  const m = parts.find((p) => p.type === 'month')?.value;
-  const day = parts.find((p) => p.type === 'day')?.value;
-  return `${y}-${m}-${day}`;
-}
-
 function jerusalemDateKey(d: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(d);
 }
 
-async function fetchYesDaySchedule(channelId: string, date: Date, ignorePastItems: boolean): Promise<YesScheduleItem[]> {
-  const dateStr = formatYesDate(date);
-  const json = await yesFetch(`/channels/${encodeURIComponent(channelId)}?date=${dateStr}&ignorePastItems=${ignorePastItems}`);
-  if (!json) return [];
-  const raw = extractArray(json, 'items', 'schedule', 'programs');
-  return raw
-    .map((it: any) => ({
-      title: String(it.title ?? it.name ?? '').trim(),
-      description: it.description ? String(it.description).trim() : undefined,
-      imageUrl: it.imageUrl ? String(it.imageUrl) : undefined,
-      starts: String(it.starts ?? it.start ?? it.startTime ?? ''),
-      ends: String(it.ends ?? it.end ?? it.endTime ?? ''),
-    }))
-    .filter((it) => it.title && it.starts);
+async function loadDayScheduleFromSupabase(channelId: string, dateKey: string): Promise<YesScheduleItem[]> {
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('yes_schedule_cache')
+      .select('items')
+      .eq('channel_id', channelId)
+      .eq('date_key', dateKey)
+      .maybeSingle();
+    if (error) {
+      console.warn(`[YesBroadcast] Supabase yes_schedule_cache read error for ${channelId}/${dateKey}:`, error.message);
+      return [];
+    }
+    if (!data || !Array.isArray((data as any).items)) return [];
+    return (data as any).items
+      .map((it: any) => ({
+        title: String(it.title ?? '').trim(),
+        description: it.description ? String(it.description).trim() : undefined,
+        imageUrl: it.imageUrl ? String(it.imageUrl) : undefined,
+        starts: String(it.starts ?? ''),
+        ends: String(it.ends ?? ''),
+      }))
+      .filter((it: YesScheduleItem) => it.title && it.starts);
+  } catch (err: any) {
+    console.warn('[YesBroadcast] Supabase unavailable for yes_schedule_cache:', err?.message || err);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -156,50 +90,13 @@ async function loadSportChannelsFromSupabase(): Promise<YesChannel[]> {
 }
 
 /**
- * Pulls the live channel list from Yes and upserts it into `broadcast_channels`.
- * Existing rows keep their `is_sport_channel` flag untouched (so manual curation persists);
- * brand-new channels are inserted flagged as sport channels only if their title looks like one.
+ * Channel list refresh must run from Israel (same CDN restriction as schedules), so it's not
+ * done from this server. If Yes adds a new sport channel, add its CID/title directly to the
+ * `broadcast_channels` table (or extend scripts/fetch-yes-schedule.ts to also sync channels).
  */
 export async function refreshChannelsFromYes(): Promise<{ total: number; newlyAdded: number }> {
-  const live = await fetchYesChannelList();
-  if (live.length === 0) {
-    return { total: 0, newlyAdded: 0 };
-  }
-
-  const supabase = getSupabaseClient();
-  const { data: existingRows } = await supabase.from('broadcast_channels').select('channel_id');
-  const existingIds = new Set((existingRows || []).map((r: any) => r.channel_id));
-
-  const sportKeywordRe = /sport|ספורט|eurosport|יורוספורט/i;
-  let newlyAdded = 0;
-
-  const rows = live.map((c) => {
-    const isNew = !existingIds.has(c.channelId);
-    if (isNew) newlyAdded++;
-    return {
-      channel_id: c.channelId,
-      title: c.title,
-      // Only set is_sport_channel for genuinely new rows; upsert below uses
-      // ignoreDuplicates-style merge so existing flags for known rows aren't touched.
-      is_sport_channel: isNew ? sportKeywordRe.test(c.title) : undefined,
-      updated_at: new Date().toISOString(),
-    };
-  });
-
-  // Split: update title/updated_at only for existing channels (preserve flag),
-  // insert full rows (with computed flag) for new ones.
-  const toUpdate = rows.filter((r) => existingIds.has(r.channel_id));
-  const toInsert = rows.filter((r) => !existingIds.has(r.channel_id));
-
-  for (const row of toUpdate) {
-    await supabase.from('broadcast_channels').update({ title: row.title, updated_at: row.updated_at }).eq('channel_id', row.channel_id);
-  }
-  if (toInsert.length > 0) {
-    await supabase.from('broadcast_channels').insert(toInsert.map((r) => ({ ...r, is_sport_channel: r.is_sport_channel ?? false })));
-  }
-
-  sportChannelsCache = null; // force reload from Supabase on next access
-  return { total: live.length, newlyAdded };
+  console.warn('[YesBroadcast] refreshChannelsFromYes is a no-op on this server (geoblocked from Israel). Update broadcast_channels manually or via scripts/fetch-yes-schedule.ts run from Israel.');
+  return { total: 0, newlyAdded: 0 };
 }
 
 async function getSportChannels(): Promise<YesChannel[]> {
@@ -214,6 +111,10 @@ async function getSportChannels(): Promise<YesChannel[]> {
 // ---------------------------------------------------------------------------
 // Per-day schedule cache (shared across fixture matching + weekly schedule view)
 // ---------------------------------------------------------------------------
+// Short in-memory cache on top of the Supabase read, so a burst of concurrent requests
+// (many users, or resolveBroadcastsForFixtures resolving many fixtures at once) doesn't hit
+// Supabase once per fixture — the underlying data itself only changes when the cron script
+// (running from Israel) writes a fresh row, at most twice a day.
 
 interface DayScheduleCacheEntry {
   items: YesScheduleItem[];
@@ -223,13 +124,24 @@ const dayScheduleCache = new Map<string, DayScheduleCacheEntry>();
 const SCHEDULE_TTL_MS = 1000 * 60 * 20; // 20 minutes
 
 async function getDaySchedule(channelId: string, date: Date, ignorePastItems: boolean): Promise<YesScheduleItem[]> {
-  const cacheKey = `${channelId}:${jerusalemDateKey(date)}:${ignorePastItems}`;
+  const dateKey = jerusalemDateKey(date);
+  const cacheKey = `${channelId}:${dateKey}`;
   const cached = dayScheduleCache.get(cacheKey);
+  let items: YesScheduleItem[];
   if (cached && Date.now() - cached.timestamp < SCHEDULE_TTL_MS) {
-    return cached.items;
+    items = cached.items;
+  } else {
+    items = await loadDayScheduleFromSupabase(channelId, dateKey);
+    dayScheduleCache.set(cacheKey, { items, timestamp: Date.now() });
   }
-  const items = await fetchYesDaySchedule(channelId, date, ignorePastItems);
-  dayScheduleCache.set(cacheKey, { items, timestamp: Date.now() });
+
+  if (ignorePastItems) {
+    const now = Date.now();
+    return items.filter((it) => {
+      const end = new Date(it.ends).getTime();
+      return isNaN(end) || end >= now;
+    });
+  }
   return items;
 }
 
