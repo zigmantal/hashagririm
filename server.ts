@@ -465,11 +465,16 @@ async function startServer() {
     }
   });
 
-  // Admin-only: pull the latest channel list from Yes and upsert into broadcast_channels
+  // Channel list refresh must run from Israel (Yes's CDN blocks Cloud Run's London IPs) —
+  // this endpoint just reports that rather than pretending to do it.
   app.post('/api/schedule/refresh-channels', requireAdmin, async (req, res) => {
     try {
       const result = await refreshChannelsFromYes();
-      res.json({ success: true, ...result });
+      res.json({
+        success: true,
+        ...result,
+        note: 'Channel list refresh cannot run from this server (geoblocked by Yes\'s CDN). Run `npm run fetch:yes-schedule` from a machine in Israel, or update the broadcast_channels table directly.',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to refresh channel list' });
     }
