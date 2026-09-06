@@ -18,6 +18,13 @@ interface DateGroup {
   fixtures: MatchFixture[];
 }
 
+const SOURCE_LABEL: Record<string, string> = {
+  sportsdb_live: 'S',
+  espn_live: 'E',
+  search_grounded: 'G',
+  official_calendar: 'T',
+};
+
 export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
 
   // Group fixtures by Israeli Date
@@ -167,6 +174,14 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
 
                     {/* 4. Channel */}
                     <div className="shrink-0 flex items-center gap-1 sm:gap-2 justify-end">
+                      {fixture.dataSource && (
+                        <span
+                          className="w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-slate-700 text-slate-300"
+                          title={`Source: ${fixture.dataSource}`}
+                        >
+                          {SOURCE_LABEL[fixture.dataSource] || '?'}
+                        </span>
+                      )}
                       {fixture.broadcast.confirmed === false ? (
                         <span
                           className="px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-semibold truncate max-w-[85px] sm:max-w-[120px] text-center border border-dashed border-slate-600 text-slate-400"
@@ -194,6 +209,11 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
           </div>
         </div>
       ))}
+
+      {/* Data-source legend */}
+      <div className="text-[10px] text-slate-500 px-1 pt-1">
+        Source: S = TheSportsDB, E = ESPN, G = Gemini search, T = template fallback
+      </div>
     </div>
   );
 }
