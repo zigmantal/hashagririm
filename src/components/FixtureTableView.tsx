@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { MatchFixture } from '../types';
 import { formatIsraelDateTime, formatHebrewDay } from '../utils/dateUtils';
-import { Calendar, MapPin, Tv, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
 
 interface FixtureTableViewProps {
   fixtures: MatchFixture[];
@@ -19,11 +19,6 @@ interface DateGroup {
 }
 
 export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  const toggleExpand = (id: string) => {
-    setExpandedId(prev => prev === id ? null : id);
-  };
 
   // Group fixtures by Israeli Date
   const dateGroups = useMemo(() => {
@@ -101,7 +96,6 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
           <div className="divide-y divide-slate-700/60">
             {group.fixtures.map((fixture) => {
               const formatted = formatIsraelDateTime(fixture.dateTimeUtc);
-              const isExpanded = expandedId === fixture.id;
               const isHome = fixture.homeTeam.name === fixture.playerTeam;
               const opponent = isHome ? fixture.awayTeam.name : fixture.homeTeam.name;
 
@@ -116,8 +110,7 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
                 <div key={fixture.id} className="transition-colors hover:bg-slate-800/40">
                   {/* Compact Single Row */}
                   <div
-                    onClick={() => toggleExpand(fixture.id)}
-                    className="px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-1.5 sm:gap-3 cursor-pointer text-xs select-none"
+                    className="px-2.5 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-1.5 sm:gap-3 text-xs select-none"
                   >
                     {/* 1. Time & Score Status */}
                     <div className="shrink-0 w-14 sm:w-16 font-mono font-bold text-slate-100 text-left">
@@ -172,7 +165,7 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
                     {/* Divider */}
                     <span className="text-slate-600 shrink-0">|</span>
 
-                    {/* 4. Channel & Expand Arrow */}
+                    {/* 4. Channel */}
                     <div className="shrink-0 flex items-center gap-1 sm:gap-2 justify-end">
                       {fixture.broadcast.confirmed === false ? (
                         <span
@@ -193,50 +186,8 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
                           {fixture.broadcast.channelName}
                         </span>
                       )}
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleExpand(fixture.id);
-                        }}
-                        className="p-1 text-slate-400 hover:text-slate-200 transition"
-                      >
-                        {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                      </button>
                     </div>
                   </div>
-
-                  {/* Expandable Details Section */}
-                  {isExpanded && (
-                    <div className="px-3 sm:px-4 py-2.5 bg-slate-900/80 border-t border-slate-800 text-xs text-slate-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
-                      <div className="space-y-1 text-[11px] sm:text-xs">
-                        {fixture.broadcast.confirmed === false ? (
-                          <div className="flex items-center gap-1.5 text-slate-400 italic">
-                            <span>TV channel not yet confirmed — check closer to kickoff</span>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-slate-200">Channel:</span>
-                              <span className="text-blue-400 font-semibold">{fixture.broadcast.hebrewName}</span>
-                              <span className="text-slate-400">({fixture.broadcast.networkGroup})</span>
-                            </div>
-                            <div className="text-slate-400 flex items-center gap-1.5 flex-wrap">
-                              <span>Channel Numbers:</span>
-                              <span className="text-slate-200 font-medium">
-                                HOT {fixture.broadcast.channelNumberHot} • YES {fixture.broadcast.channelNumberYes} • Partner {fixture.broadcast.channelNumberPartner || fixture.broadcast.channelNumberHot} • Cellcom {fixture.broadcast.channelNumberCellcom || fixture.broadcast.channelNumberHot}
-                              </span>
-                            </div>
-                          </>
-                        )}
-                        <div className="flex items-center gap-1 text-slate-400">
-                          <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
-                          <span>Venue: {fixture.venue.name} ({fixture.venue.city})</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               );
             })}
