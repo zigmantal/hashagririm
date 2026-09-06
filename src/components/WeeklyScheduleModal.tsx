@@ -146,9 +146,6 @@ export function WeeklyScheduleModal({ isOpen, onClose }: WeeklyScheduleModalProp
                           {formatTime(item.startsUtc)}
                         </span>
                         <span className="text-slate-200">{item.title}</span>
-                        {item.description && (
-                          <span className="text-slate-500 truncate">— {item.description}</span>
-                        )}
                       </div>
                     ))}
                   </div>
