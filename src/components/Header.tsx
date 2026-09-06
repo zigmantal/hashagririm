@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
   onOpenAdmin: () => void;
-  onOpenChannelsGuide: () => void;
+  onOpenWeeklySchedule: () => void;
   onRefresh: () => void;
   isRefreshing: boolean;
   activeCount: number;
@@ -14,7 +14,7 @@ interface HeaderProps {
 
 export function Header({
   onOpenAdmin,
-  onOpenChannelsGuide,
+  onOpenWeeklySchedule,
   onRefresh,
   isRefreshing,
   activeCount,
@@ -82,15 +82,15 @@ export function Header({
 
         {/* Right Controls - Mobile Optimized */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Local TV Guide */}
+          {/* Full Weekly TV Schedule */}
           <button
             id="channels-guide-btn"
-            onClick={onOpenChannelsGuide}
+            onClick={onOpenWeeklySchedule}
             className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
-            title="Israeli TV Channels Guide"
+            title="Full Weekly TV Schedule"
           >
             <Tv className="w-3.5 h-3.5 text-blue-400" />
-            <span className="hidden sm:inline">TV Guide</span>
+            <span className="hidden sm:inline">TV Schedule</span>
           </button>
 
           {/* Live Sync Schedule Button */}

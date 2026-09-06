@@ -322,7 +322,7 @@ export default function App() {
       {/* Top Navbar */}
       <Header
         onOpenAdmin={() => handleOpenAdmin('add')}
-        onOpenChannelsGuide={() => setIsChannelsModalOpen(true)}
+        onOpenWeeklySchedule={() => setIsWeeklyScheduleOpen(true)}
         onRefresh={() => loadFixtures(true)}
         isRefreshing={isRefreshing}
         activeCount={players.filter((p) => p.active).length}
