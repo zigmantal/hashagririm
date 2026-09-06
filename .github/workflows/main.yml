@@ -1,0 +1,19 @@
+name: Hello World Workflow
+
+# Defines when the workflow will run
+on:
+  workflow_dispatch:
+
+jobs:
+  greet:
+    # Specifies the runner operating system
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out the repository code
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      # Step 2: Run a simple inline shell command
+      - name: Print Hello World
+        run: echo "Hello, World! GitHub Actions is running successfully."
