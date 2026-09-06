@@ -18,9 +18,6 @@ interface DateGroup {
   fixtures: MatchFixture[];
 }
 
-const SOURCE_DEBUG_KEY = 'sportssync_show_source_debug';
-const isSourceDebugOn = () => typeof window !== 'undefined' && localStorage.getItem(SOURCE_DEBUG_KEY) === 'true';
-
 const SOURCE_LABEL: Record<string, string> = {
   sportsdb_live: 'S',
   espn_live: 'E',
@@ -177,7 +174,7 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
 
                     {/* 4. Channel */}
                     <div className="shrink-0 flex items-center gap-1 sm:gap-2 justify-end">
-                      {isSourceDebugOn() && fixture.dataSource && (
+                      {fixture.dataSource && (
                         <span
                           className="w-4 h-4 flex items-center justify-center rounded text-[9px] font-bold bg-slate-700 text-slate-300"
                           title={`Source: ${fixture.dataSource}`}
@@ -212,6 +209,11 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
           </div>
         </div>
       ))}
+
+      {/* Data-source legend */}
+      <div className="text-[10px] text-slate-500 px-1 pt-1">
+        Source: S = TheSportsDB, E = ESPN, G = Gemini search, T = template fallback
+      </div>
     </div>
   );
 }
