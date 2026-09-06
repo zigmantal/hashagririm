@@ -1,12 +1,10 @@
 import { useState, useMemo } from 'react';
 import { MatchFixture } from '../types';
 import { formatIsraelDateTime, formatHebrewDay } from '../utils/dateUtils';
-import { getGoogleCalendarUrl, downloadIcsFile } from '../utils/calendarUtils';
-import { Calendar, MapPin, Tv, Clock, Download, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, MapPin, Tv, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface FixtureTableViewProps {
   fixtures: MatchFixture[];
-  onOpenChannelsGuide: () => void;
 }
 
 interface DateGroup {
@@ -20,7 +18,7 @@ interface DateGroup {
   fixtures: MatchFixture[];
 }
 
-export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTableViewProps) {
+export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const toggleExpand = (id: string) => {
@@ -236,34 +234,6 @@ export function FixtureTableView({ fixtures, onOpenChannelsGuide }: FixtureTable
                           <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
                           <span>Venue: {fixture.venue.name} ({fixture.venue.city})</span>
                         </div>
-                      </div>
-
-                      {/* Action buttons */}
-                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center pt-1 sm:pt-0">
-                        <a
-                          href={getGoogleCalendarUrl(fixture)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition"
-                        >
-                          <Calendar className="w-3 h-3 text-blue-400" />
-                          <span>Google Cal</span>
-                        </a>
-
-                        <button
-                          onClick={() => downloadIcsFile(fixture)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition cursor-pointer"
-                        >
-                          <Download className="w-3 h-3 text-emerald-400" />
-                          <span>.ICS</span>
-                        </button>
-
-                        <button
-                          onClick={onOpenChannelsGuide}
-                          className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-300 hover:text-white border border-blue-500/30 text-xs font-semibold transition cursor-pointer"
-                        >
-                          Guide
-                        </button>
                       </div>
                     </div>
                   )}

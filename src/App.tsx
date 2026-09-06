@@ -479,7 +479,6 @@ export default function App() {
             /* Table View */
             <FixtureTableView
               fixtures={filteredFixtures}
-              onOpenChannelsGuide={() => setIsChannelsModalOpen(true)}
             />
           ) : (
             /* Grid View */
