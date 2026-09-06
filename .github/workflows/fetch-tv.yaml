@@ -1,0 +1,37 @@
+name: Fetch Yes broadcast schedule
+
+# EXPERIMENTAL: GitHub-hosted runners run in Microsoft's own datacenters (predominantly US/EU
+# regions), not Israel. Yes's CDN blocks non-Israeli datacenter IPs for svc.yes.co.il (confirmed
+# for Cloud Run's europe-west2/London — HTTP 403, x-amz-cf-pop LHR3-P3). This workflow may hit
+# the same block. Run it manually once (workflow_dispatch) to check before relying on the
+# schedule below.
+
+on:
+  workflow_dispatch: {} # manual "Run workflow" button in the Actions tab, for testing
+  # schedule:
+  #   - cron: '0 6,18 * * *' # 06:00 and 18:00 UTC — adjust if you want Israel-local times instead
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Show runner network origin (for debugging geoblock)
+        run: |
+          curl -s https://ipapi.co/json/ | tee runner-ip-info.json || true
+
+      - name: Run Yes schedule fetcher
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: npx tsx scripts/fetch-yes-schedule.ts
