@@ -17,6 +17,15 @@
         <string>scripts/fetch-yes-schedule.ts</string>
     </array>
 
+    <!-- launchd runs jobs with a minimal PATH that doesn't include Homebrew's bin dir, so even
+         an absolute path to npx fails once npx's own "#!/usr/bin/env node" shebang tries to
+         look up node via the same restricted PATH. Setting PATH explicitly here fixes both. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
     <!-- Run at 06:00 and 18:00 local time. If the Mac is asleep/off at that moment,
          launchd (unlike cron) runs the job as soon as possible after it wakes up,
          instead of silently skipping it. -->
