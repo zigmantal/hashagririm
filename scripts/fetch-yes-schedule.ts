@@ -151,6 +151,36 @@ async function main() {
 
   const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
   console.log(`Done in ${elapsedSec}s — ${okCount} channel/day fetches OK, ${failCount} failed, ${rows.length} rows upserted.`);
+
+  await notifyAppToClearCache();
+}
+
+/**
+ * Tells the live Cloud Run app to drop its in-memory Yes schedule cache right away, instead of
+ * serving a stale snapshot for up to 24h until the TTL naturally expires. Requires APP_URL and
+ * CACHE_CLEAR_SECRET in the environment; silently skipped (with a warning) if either is missing,
+ * so this never blocks the actual data fetch/upsert above from succeeding.
+ */
+async function notifyAppToClearCache(): Promise<void> {
+  const appUrl = process.env.APP_URL;
+  const secret = process.env.CACHE_CLEAR_SECRET;
+  if (!appUrl || !secret) {
+    console.warn('Skipping live cache-clear notification: APP_URL or CACHE_CLEAR_SECRET not set in .env. The app will pick up fresh data within 24h anyway.');
+    return;
+  }
+  try {
+    const res = await fetch(`${appUrl.replace(/\/$/, '')}/api/schedule/clear-cache`, {
+      method: 'POST',
+      headers: { 'x-cache-clear-secret': secret },
+    });
+    if (res.ok) {
+      console.log('Notified live app to clear its schedule cache.');
+    } else {
+      console.warn(`Cache-clear notification failed (HTTP ${res.status}) — app will pick up fresh data within 24h anyway.`);
+    }
+  } catch (err: any) {
+    console.warn('Cache-clear notification failed:', err?.message || err, '— app will pick up fresh data within 24h anyway.');
+  }
 }
 
 main().catch((err) => {
