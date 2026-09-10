@@ -6,7 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { playerStore } from './server/services/playerStore';
 import { fetchAllActiveFixtures, fetchPlayerFixtures, lookupAthleteDetails, clearPlayerFixtureCache } from './server/services/sportsDataService';
 import { ISRAELI_CHANNELS_GUIDE } from './server/services/israeliBroadcastService';
-import { getWeeklySchedule, refreshChannelsFromYes } from './server/services/yesBroadcastService';
+import { getWeeklySchedule, refreshChannelsFromYes, clearYesCaches } from './server/services/yesBroadcastService';
 import { isAdminEmail, verifyAdminCredentials } from './server/config/adminConfig';
 
 dotenv.config();
@@ -478,6 +478,22 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to refresh channel list' });
     }
+  });
+
+  // Force-clear the in-memory Yes schedule cache (and fixtures cache, since resolved
+  // broadcasts live on cached fixtures too) without waiting for the 24h TTL or redeploying.
+  // Called automatically by scripts/fetch-yes-schedule.ts right after it writes fresh data.
+  // Uses a separate shared secret (not the admin OAuth session) since this is a
+  // machine-to-machine call from a script, not a logged-in admin browsing the UI.
+  app.post('/api/schedule/clear-cache', (req, res) => {
+    const providedSecret = (req.headers['x-cache-clear-secret'] as string) || '';
+    const expectedSecret = process.env.CACHE_CLEAR_SECRET || '';
+    if (!expectedSecret || providedSecret !== expectedSecret) {
+      return res.status(401).json({ error: 'Invalid or missing cache-clear secret.' });
+    }
+    clearYesCaches();
+    clearPlayerFixtureCache();
+    res.json({ success: true, note: 'Yes schedule cache and fixtures cache cleared. Next request will re-fetch from Supabase.' });
   });
 
   // Vite middleware setup
