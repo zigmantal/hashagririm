@@ -95,7 +95,7 @@ interface FullScheduleCacheEntry {
 }
 let fullScheduleCache: FullScheduleCacheEntry | null = null;
 let fullScheduleInFlight: Promise<Map<string, YesScheduleItem[]>> | null = null;
-const FULL_SCHEDULE_TTL_MS = 1000 * 60 * 60; // 1 hour — data itself only changes ~2x/day
+const FULL_SCHEDULE_TTL_MS = 1000 * 60 * 60 * 5; // 5 hours — data itself only changes ~2x/day
 
 async function loadFullScheduleFromSupabase(): Promise<Map<string, YesScheduleItem[]>> {
   const byKey = new Map<string, YesScheduleItem[]>();
