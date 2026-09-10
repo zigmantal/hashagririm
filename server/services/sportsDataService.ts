@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { MatchFixture, Player, SportType } from '../../src/types';
 import { resolveIsraeliBroadcast } from './israeliBroadcastService';
 import { resolveBroadcastsForFixtures } from './yesBroadcastService';
@@ -2417,7 +2417,76 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
 } | null> {
   const cleanKey = athleteName.toLowerCase().trim();
 
-  // 1. Check TheSportsDB Live Official Athlete Directory API First
+  // 1. Gemini AI Lookup with live Google Search grounding FIRST — this is the only source here
+  // that can actually reflect a very recent transfer, since it searches the live web rather
+  // than relying on a community-maintained DB snapshot (TheSportsDB, below) or training data.
+  const ai = getAiClient();
+  if (ai && !isGeminiRateLimited()) {
+    try {
+      const prompt = `Identify the professional athlete "${athleteName}" and find their CURRENT real-world
+      team/club using up-to-date web search — this must reflect any recent transfers, not just
+      commonly-known historical team associations. Today's date context: use search results, not memory.
+
+      Return ONLY a valid JSON object (no markdown, no commentary) with these fields:
+      - name: Full name in English
+      - nativeName: Hebrew name if known, else same as name
+      - sport: "football" | "basketball" | "tennis" | "other"
+      - currentTeam: Exact current club/team as of today
+      - league: League name (e.g. "MLS (Major League Soccer)", "Belgian Pro League", "Spanish La Liga", "Israeli Premier League", "NBA", "EuroLeague")
+      - country: Nationality (e.g. "Israel", "France", "Spain")
+      - position: Position like "Winger (#11)", "Striker (#27)", "Point Guard (#45)"
+      - jerseyNumber: Jersey number as string
+      - teamLogo: Valid public ESPN logo url (https://a.espncdn.com/...) or empty string
+      - bio: Brief 1-2 sentence description mentioning their current club
+
+      If you find evidence of a recent transfer, use the NEW club, not the previous one.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.7-flash',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      const text = response.text?.trim() || '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const sport = (['football', 'basketball', 'tennis'].includes(parsed.sport?.toLowerCase())
+          ? parsed.sport.toLowerCase()
+          : 'football') as SportType;
+
+        return {
+          name: parsed.name || athleteName,
+          nativeName: parsed.nativeName || parsed.name || athleteName,
+          sport,
+          currentTeam: parsed.currentTeam || 'Club Team',
+          league: parsed.league || 'Top League',
+          country: parsed.country || 'International',
+          position: parsed.position || 'Player',
+          jerseyNumber: parsed.jerseyNumber || '',
+          photoUrl: sport === 'basketball'
+            ? 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&auto=format&fit=crop&q=80'
+            : 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80',
+          teamLogo: parsed.teamLogo || 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png',
+          bio: parsed.bio || `Professional ${sport} athlete playing for ${parsed.currentTeam}.`
+        };
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || String(err);
+      if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+        setGeminiRateLimited(10 * 60 * 1000);
+        console.info(`[SportsSync] Gemini quota reached for athlete lookup (${athleteName}). Falling back to TheSportsDB/static data.`);
+      } else {
+        console.warn('AI search-grounded lookup error:', err?.message || err);
+      }
+    }
+  }
+
+  // 2. TheSportsDB — used as a fallback if the search-grounded AI lookup above was unavailable
+  // (rate-limited) or failed. This is a community-maintained free DB that can itself lag behind
+  // very recent transfers, which is why it's no longer checked first.
   try {
     const sportsDbResult = await searchPlayerOnTheSportsDb(athleteName);
     if (sportsDbResult && sportsDbResult.currentTeam && sportsDbResult.currentTeam !== 'Free Agent') {
@@ -2431,7 +2500,8 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
     console.warn('[SportsSync] TheSportsDB search error:', tsdbErr);
   }
 
-  // 2. Direct dictionary match
+  // 3. Direct dictionary match — hardcoded in the codebase, so this can go stale after a real
+  // transfer. Only reached if TheSportsDB and the search-grounded AI lookup above both failed.
   if (KNOWN_ATHLETES_MAP[cleanKey]) {
     const known = KNOWN_ATHLETES_MAP[cleanKey];
     return {
@@ -2451,7 +2521,7 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
     };
   }
 
-  // 2. Fuzzy / partial match in KNOWN_ATHLETES_MAP
+  // 4. Fuzzy / partial match in KNOWN_ATHLETES_MAP (same staleness caveat as above)
   for (const [key, known] of Object.entries(KNOWN_ATHLETES_MAP)) {
     if (cleanKey.includes(key) || key.includes(cleanKey) || (cleanKey.length > 4 && key.startsWith(cleanKey.slice(0, 4)))) {
       return {
@@ -2472,7 +2542,7 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
     }
   }
 
-  // 3. Check preset list
+  // 5. Check preset list (same staleness caveat)
   const preset = POPULAR_PRESET_PLAYERS.find(p => 
     p.name.toLowerCase() === cleanKey || 
     p.nativeName.toLowerCase() === cleanKey ||
@@ -2496,83 +2566,7 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
     };
   }
 
-  // 4. Fallback to Gemini AI Lookup if not rate limited
-  const ai = getAiClient();
-  if (ai && !isGeminiRateLimited()) {
-    try {
-      const prompt = `You are an expert sports data service. Identify the professional athlete "${athleteName}".
-      Provide their CURRENT real-world team/club and league for the current season (2024-2025/2026).
-      
-      Return a JSON object with:
-      - name: Full name in English
-      - nativeName: Hebrew name (e.g. ליאל עבדה, ענאן חלאילי, תאי בריבו)
-      - sport: "football" | "basketball" | "tennis" | "other"
-      - currentTeam: Exact current club/team (e.g. "Charlotte FC", "Philadelphia Union", "Royale Union Saint-Gilloise", "KAA Gent", "Maccabi Tel Aviv", "Real Madrid", "Inter Miami", "Portland Trail Blazers")
-      - league: League name (e.g. "MLS (Major League Soccer)", "Belgian Pro League", "Spanish La Liga", "Israeli Premier League", "NBA", "EuroLeague")
-      - country: Nationality (e.g. "Israel", "France", "Spain")
-      - position: Position like "Winger (#11)", "Striker (#27)", "Point Guard (#45)"
-      - jerseyNumber: Jersey number as string
-      - teamLogo: Valid public ESPN logo url (https://a.espncdn.com/...) or empty string
-      - bio: Brief 1-2 sentence description`;
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.7-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              nativeName: { type: Type.STRING },
-              sport: { type: Type.STRING },
-              currentTeam: { type: Type.STRING },
-              league: { type: Type.STRING },
-              country: { type: Type.STRING },
-              position: { type: Type.STRING },
-              jerseyNumber: { type: Type.STRING },
-              teamLogo: { type: Type.STRING },
-              bio: { type: Type.STRING },
-            },
-            required: ['name', 'sport', 'currentTeam', 'league']
-          }
-        }
-      });
-
-      if (response.text) {
-        const parsed = JSON.parse(response.text.trim());
-        const sport = (['football', 'basketball', 'tennis'].includes(parsed.sport?.toLowerCase()) 
-          ? parsed.sport.toLowerCase() 
-          : 'football') as SportType;
-
-        return {
-          name: parsed.name || athleteName,
-          nativeName: parsed.nativeName || parsed.name || athleteName,
-          sport,
-          currentTeam: parsed.currentTeam || 'Club Team',
-          league: parsed.league || 'Top League',
-          country: parsed.country || 'International',
-          position: parsed.position || 'Player',
-          jerseyNumber: parsed.jerseyNumber || '',
-          photoUrl: sport === 'basketball'
-            ? 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=600&auto=format&fit=crop&q=80'
-            : 'https://images.unsplash.com/photo-1508098682722-e99c43a406b2?w=600&auto=format&fit=crop&q=80',
-          teamLogo: parsed.teamLogo || 'https://a.espncdn.com/i/teamlogos/default-team-logo-500.png',
-          bio: parsed.bio || `Professional ${sport} athlete playing for ${parsed.currentTeam}.`
-        };
-      }
-    } catch (err: any) {
-      const errMsg = err?.message || String(err);
-      if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-        setGeminiRateLimited(10 * 60 * 1000);
-        console.info(`[SportsSync] Gemini quota reached for athlete lookup (${athleteName}). Falling back to smart heuristics.`);
-      } else {
-        console.warn('AI lookup fallback error:', err?.message || err);
-      }
-    }
-  }
-
-  // 5. Ultimate smart heuristic fallback
+  // 6. Ultimate smart heuristic fallback
   const isBasketball = /basketball|basket|nba|macabi|hapoel.*basket/i.test(athleteName);
   return {
     name: athleteName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
