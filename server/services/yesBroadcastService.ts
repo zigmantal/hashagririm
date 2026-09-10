@@ -35,35 +35,6 @@ function jerusalemDateKey(d: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(d);
 }
 
-async function loadDayScheduleFromSupabase(channelId: string, dateKey: string): Promise<YesScheduleItem[]> {
-  try {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase
-      .from('yes_schedule_cache')
-      .select('items')
-      .eq('channel_id', channelId)
-      .eq('date_key', dateKey)
-      .maybeSingle();
-    if (error) {
-      console.warn(`[YesBroadcast] Supabase yes_schedule_cache read error for ${channelId}/${dateKey}:`, error.message);
-      return [];
-    }
-    if (!data || !Array.isArray((data as any).items)) return [];
-    return (data as any).items
-      .map((it: any) => ({
-        title: String(it.title ?? '').trim(),
-        description: it.description ? String(it.description).trim() : undefined,
-        imageUrl: it.imageUrl ? String(it.imageUrl) : undefined,
-        starts: String(it.starts ?? ''),
-        ends: String(it.ends ?? ''),
-      }))
-      .filter((it: YesScheduleItem) => it.title && it.starts);
-  } catch (err: any) {
-    console.warn('[YesBroadcast] Supabase unavailable for yes_schedule_cache:', err?.message || err);
-    return [];
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Sport-channel list (backed by Supabase `broadcast_channels`, refreshed periodically)
 // ---------------------------------------------------------------------------
@@ -109,31 +80,78 @@ async function getSportChannels(): Promise<YesChannel[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Per-day schedule cache (shared across fixture matching + weekly schedule view)
+// Full schedule cache — ONE bulk read instead of many small ones
 // ---------------------------------------------------------------------------
-// Short in-memory cache on top of the Supabase read, so a burst of concurrent requests
-// (many users, or resolveBroadcastsForFixtures resolving many fixtures at once) doesn't hit
-// Supabase once per fixture — the underlying data itself only changes when the cron script
-// (running from Israel) writes a fresh row, at most twice a day.
+// Previously each (channel, date) pair did its own Supabase query, cached individually. For a
+// single player's fixtures that meant up to ~60 separate queries (15 channels x ~4 needed
+// dates) fanning out every time the cache was cold — which on Cloud Run happens often, since
+// instances restart/scale and wipe in-memory state. The whole yes_schedule_cache table is only
+// ~150 rows (15 channels x 7 days) and only changes when the cron script runs (~2x/day), so
+// there's no reason not to just load all of it in a single query and cache it as one blob.
 
-interface DayScheduleCacheEntry {
-  items: YesScheduleItem[];
+interface FullScheduleCacheEntry {
+  byKey: Map<string, YesScheduleItem[]>; // key: `${channelId}:${dateKey}`
   timestamp: number;
 }
-const dayScheduleCache = new Map<string, DayScheduleCacheEntry>();
-const SCHEDULE_TTL_MS = 1000 * 60 * 20; // 20 minutes
+let fullScheduleCache: FullScheduleCacheEntry | null = null;
+let fullScheduleInFlight: Promise<Map<string, YesScheduleItem[]>> | null = null;
+const FULL_SCHEDULE_TTL_MS = 1000 * 60 * 60 * 5; // 5 hours — data itself only changes ~2x/day
+
+async function loadFullScheduleFromSupabase(): Promise<Map<string, YesScheduleItem[]>> {
+  const byKey = new Map<string, YesScheduleItem[]>();
+  try {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('yes_schedule_cache')
+      .select('channel_id, date_key, items');
+    if (error) {
+      console.warn('[YesBroadcast] Supabase yes_schedule_cache bulk read error:', error.message);
+      return byKey;
+    }
+    for (const row of data || []) {
+      const items = Array.isArray((row as any).items)
+        ? (row as any).items
+            .map((it: any) => ({
+              title: String(it.title ?? '').trim(),
+              description: it.description ? String(it.description).trim() : undefined,
+              imageUrl: it.imageUrl ? String(it.imageUrl) : undefined,
+              starts: String(it.starts ?? ''),
+              ends: String(it.ends ?? ''),
+            }))
+            .filter((it: YesScheduleItem) => it.title && it.starts)
+        : [];
+      byKey.set(`${(row as any).channel_id}:${(row as any).date_key}`, items);
+    }
+  } catch (err: any) {
+    console.warn('[YesBroadcast] Supabase unavailable for yes_schedule_cache bulk read:', err?.message || err);
+  }
+  return byKey;
+}
+
+async function getFullSchedule(): Promise<Map<string, YesScheduleItem[]>> {
+  if (fullScheduleCache && Date.now() - fullScheduleCache.timestamp < FULL_SCHEDULE_TTL_MS) {
+    return fullScheduleCache.byKey;
+  }
+  // Multiple concurrent callers (e.g. several players' fixtures resolving at once on a cold
+  // cache) should share one in-flight request instead of each firing their own bulk query.
+  if (fullScheduleInFlight) {
+    return fullScheduleInFlight;
+  }
+  fullScheduleInFlight = loadFullScheduleFromSupabase().then((byKey) => {
+    fullScheduleCache = { byKey, timestamp: Date.now() };
+    fullScheduleInFlight = null;
+    return byKey;
+  }).catch((err) => {
+    fullScheduleInFlight = null;
+    throw err;
+  });
+  return fullScheduleInFlight;
+}
 
 async function getDaySchedule(channelId: string, date: Date, ignorePastItems: boolean): Promise<YesScheduleItem[]> {
   const dateKey = jerusalemDateKey(date);
-  const cacheKey = `${channelId}:${dateKey}`;
-  const cached = dayScheduleCache.get(cacheKey);
-  let items: YesScheduleItem[];
-  if (cached && Date.now() - cached.timestamp < SCHEDULE_TTL_MS) {
-    items = cached.items;
-  } else {
-    items = await loadDayScheduleFromSupabase(channelId, dateKey);
-    dayScheduleCache.set(cacheKey, { items, timestamp: Date.now() });
-  }
+  const byKey = await getFullSchedule();
+  const items = byKey.get(`${channelId}:${dateKey}`) || [];
 
   if (ignorePastItems) {
     const now = Date.now();
@@ -397,7 +415,7 @@ export async function getWeeklySchedule(forceRefresh = false): Promise<WeeklySch
 }
 
 export function clearYesCaches(): void {
-  dayScheduleCache.clear();
+  fullScheduleCache = null;
   weeklyScheduleCache = null;
   sportChannelsCache = null;
 }
