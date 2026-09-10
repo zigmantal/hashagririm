@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hashagririm.fetch-yes-schedule</string>
+
+    <!-- EDIT THIS: absolute path to your local clone of the repo -->
+    <key>WorkingDirectory</key>
+    <string>/Users/YOUR_USERNAME/path/to/hashagririm</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/env</string>
+        <string>npx</string>
+        <string>tsx</string>
+        <string>scripts/fetch-yes-schedule.ts</string>
+    </array>
+
+    <!-- Run at 06:00 and 18:00 local time. If the Mac is asleep/off at that moment,
+         launchd (unlike cron) runs the job as soon as possible after it wakes up,
+         instead of silently skipping it. -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Hour</key>
+            <integer>6</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Hour</key>
+            <integer>18</integer>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+    </array>
+
+    <!-- Also run once immediately when the agent is loaded (e.g. right after you log in
+         or run launchctl load), so you're not waiting for the next scheduled slot. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/hashagririm-fetch-yes-schedule.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/hashagririm-fetch-yes-schedule.log</string>
+</dict>
+</plist>

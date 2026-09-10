@@ -17,8 +17,12 @@
  * Requires SUPABASE_URL and SUPABASE_SERVICE_KEY in the environment (e.g. via a local .env
  * file loaded with dotenv, same as the main server).
  *
- * Suggested cron (twice a day, matching the app's read-side cache TTL):
- *   0 6,18 * * *  cd /path/to/hashagririm && /usr/local/bin/npx tsx scripts/fetch-yes-schedule.ts >> /path/to/hashagririm/logs/yes-fetch.log 2>&1
+ * Suggested schedule (twice a day):
+ *   - On macOS, prefer launchd over cron: see scripts/launchd/com.hashagririm.fetch-yes-schedule.plist
+ *     — unlike cron, launchd catches up a missed run shortly after the Mac wakes from sleep
+ *     instead of silently skipping it, which matters if the machine isn't on 24/7.
+ *   - Plain cron (for an always-on Linux machine):
+ *       0 6,18 * * *  cd /path/to/hashagririm && /usr/local/bin/npx tsx scripts/fetch-yes-schedule.ts >> /path/to/hashagririm/logs/yes-fetch.log 2>&1
  */
 
 import dotenv from 'dotenv';
