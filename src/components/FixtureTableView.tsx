@@ -103,8 +103,14 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
           <div className="divide-y divide-slate-700/60">
             {group.fixtures.map((fixture) => {
               const formatted = formatIsraelDateTime(fixture.dateTimeUtc);
-              const isHome = fixture.homeTeam.name === fixture.playerTeam;
-              const opponent = isHome ? fixture.awayTeam.name : fixture.homeTeam.name;
+              // Trust the server-computed isHome/opponentTeam (matched fuzzily, case-insensitively,
+              // against the player's own team) instead of re-deriving it here via strict string
+              // equality against fixture.playerTeam. playerTeam is free-typed by an admin and its
+              // casing/spacing can differ from however the live data source spells the same club
+              // (e.g. "Elche cf" vs "Elche CF"), which made this comparison silently fail and
+              // show the player's own team as their opponent.
+              const isHome = fixture.isHome;
+              const opponent = fixture.opponentTeam.name;
 
               const playerScore = isHome
                 ? (fixture.liveScore?.home ?? fixture.homeTeam.score)
