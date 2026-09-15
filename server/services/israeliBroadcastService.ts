@@ -26,6 +26,8 @@ const YES_TITLE_TO_GUIDE_ID: Record<string, string> = {
   'sport 3': 'sport3',
   'sport 4 hd': 'sport4',
   'sport 4': 'sport4',
+  'sport 6 hd': 'sport6',
+  'sport 6': 'sport6',
   'one hd': 'one',
   'one': 'one',
   'one2 hd': 'one2',
@@ -253,6 +255,22 @@ export const ISRAELI_CHANNELS_GUIDE: BroadcastChannelGuide[] = [
     cellcomNumber: '54',
     competitions: ['Europa League Multi-feed', 'South American Football', 'Copa Libertadores'],
     color: '#881337',
+    freeToAir: false,
+  },
+  {
+    id: 'sport6',
+    name: 'Sport 6 (Charlton)',
+    hebrewName: 'ספורט 6 (צ\'רלטון)',
+    // Kept as the existing 'Charlton (Sport 1-4)' group string (not renamed to include "6")
+    // since that exact string is hardcoded as a filter option in FixtureFilters.tsx and
+    // IsraeliChannelsModal.tsx — using a new group name would make Sport 6 unfilterable there.
+    group: 'Charlton (Sport 1-4)',
+    hotNumber: '64',
+    yesNumber: '64',
+    partnerNumber: '64',
+    cellcomNumber: '64',
+    competitions: [],
+    color: '#7F1D1D',
     freeToAir: false,
   },
   {
