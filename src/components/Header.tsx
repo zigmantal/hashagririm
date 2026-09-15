@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Tv, UserPlus, RefreshCw, Radio, Search, Shield, LogOut, Lock } from 'lucide-react';
+import { Tv, UserPlus, RefreshCw, Radio, Search, Shield, LogOut, Lock, CalendarDays, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface HeaderProps {
@@ -23,6 +23,22 @@ export function Header({
 }: HeaderProps) {
   const { user, isAdmin, openLoginModal, logout } = useAuth();
   const [israelTime, setIsraelTime] = useState<string>('');
+  const [calendarLinkCopied, setCalendarLinkCopied] = useState(false);
+
+  const handleSubscribeCalendar = async () => {
+    const httpsUrl = `${window.location.origin}/api/calendar.ics`;
+    // webcal:// tells the OS "this is a calendar subscription, hand it to the Calendar app"
+    // rather than downloading a one-off file — Apple/Google/Outlook all auto-refresh it after.
+    const webcalUrl = httpsUrl.replace(/^https?:\/\//, 'webcal://');
+    try {
+      await navigator.clipboard.writeText(httpsUrl);
+      setCalendarLinkCopied(true);
+      setTimeout(() => setCalendarLinkCopied(false), 2500);
+    } catch {
+      // Clipboard API can be unavailable (e.g. non-secure context); the webcal link below still works.
+    }
+    window.open(webcalUrl, '_blank');
+  };
 
   useEffect(() => {
     const updateTime = () => {
@@ -91,6 +107,21 @@ export function Header({
           >
             <Tv className="w-3.5 h-3.5 text-blue-400" />
             <span className="hidden sm:inline">TV Schedule</span>
+          </button>
+
+          {/* Subscribe to Calendar — one link, auto-updating, with a 30-min reminder built in */}
+          <button
+            id="subscribe-calendar-btn"
+            onClick={handleSubscribeCalendar}
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+            title="Subscribe in Apple/Google/Outlook Calendar — link copied to clipboard too"
+          >
+            {calendarLinkCopied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
+            )}
+            <span className="hidden sm:inline">{calendarLinkCopied ? 'Link copied!' : 'Subscribe'}</span>
           </button>
 
           {/* Live Sync Schedule Button */}
