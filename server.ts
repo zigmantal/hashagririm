@@ -7,6 +7,7 @@ import { playerStore } from './server/services/playerStore';
 import { fetchAllActiveFixtures, fetchPlayerFixtures, lookupAthleteDetails, clearPlayerFixtureCache } from './server/services/sportsDataService';
 import { ISRAELI_CHANNELS_GUIDE } from './server/services/israeliBroadcastService';
 import { getWeeklySchedule, refreshChannelsFromYes, clearYesCaches } from './server/services/yesBroadcastService';
+import { buildIcsCalendar } from './server/services/icsService';
 import { isAdminEmail, verifyAdminCredentials } from './server/config/adminConfig';
 
 dotenv.config();
@@ -409,6 +410,34 @@ async function startServer() {
       res.json({ fixtures: filtered, total: filtered.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message || 'Failed to fetch fixtures' });
+    }
+  });
+
+  // Subscribable .ics calendar feed — one URL a person can add to Apple/Google/Outlook
+  // Calendar so upcoming fixtures (with a 30-min reminder) show up automatically, no need to
+  // open the app. Optional ?playerId= scopes it to a single tracked athlete.
+  app.get('/api/calendar.ics', async (req, res) => {
+    try {
+      const { playerId } = req.query;
+      const players = await playerStore.getActive();
+      const allFixtures = await fetchAllActiveFixtures(players, false);
+
+      let fixtures = allFixtures;
+      let calendarName = 'Hashagririm — Israelis Abroad';
+      if (playerId && typeof playerId === 'string' && playerId !== 'all') {
+        fixtures = fixtures.filter((f) => f.playerId === playerId);
+        const player = players.find((p) => p.id === playerId);
+        if (player) calendarName = `Hashagririm — ${player.name}`;
+      }
+
+      const host = req.get('host') || 'hashagririm.ai.studio';
+      const ics = buildIcsCalendar(fixtures, calendarName, host);
+
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline; filename="hashagririm.ics"');
+      res.send(ics);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to build calendar feed' });
     }
   });
 
