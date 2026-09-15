@@ -222,16 +222,40 @@ const TEAM_ALIASES: Record<string, string[]> = {
   'boston celtics': ['סלטיקס', 'celtics'],
   'dallas mavericks': ['מאבריקס', 'mavericks'],
   'sacramento kings': ['קינגס', 'sacramento kings'],
+  'elche': ['אלצ\'ה', 'elche'],
+  'lecce': ['לצ\'ה', 'lecce'],
+  'southampton': ['סאות\'המפטון', 'southampton'],
 };
 
 function normalizeForMatch(text: string): string {
   return text.toLowerCase().replace(/['".ʼ’]/g, '').replace(/\s+/g, ' ').trim();
 }
 
+/**
+ * Looks up a club's Hebrew/alias strings. Tries an exact normalized match against the
+ * dictionary keys first, then falls back to a substring match in either direction (dictionary
+ * key found inside the team name, or vice versa). The fallback matters because fixture team
+ * names don't come from a single consistent source — they're whatever the external API
+ * (TheSportsDB, ESPN) happened to call the club that day (e.g. "AFC Ajax" instead of the
+ * dictionary's "ajax" key), so an exact-only lookup would silently return no aliases for a club
+ * that IS in the dictionary, just under a slightly different spelling. A short length guard
+ * avoids accidental matches on very short substrings.
+ */
+function findAliasesForTeam(teamName: string): string[] {
+  const norm = normalizeForMatch(teamName);
+  if (TEAM_ALIASES[norm]) return TEAM_ALIASES[norm];
+  for (const [key, aliases] of Object.entries(TEAM_ALIASES)) {
+    if (key.length < 4 || norm.length < 4) continue;
+    if (norm.includes(key) || key.includes(norm)) {
+      return aliases;
+    }
+  }
+  return [];
+}
+
 function teamMatchesText(team: MatchTeam, haystack: string): boolean {
   const normHaystack = normalizeForMatch(haystack);
-  const key = normalizeForMatch(team.name);
-  const aliases = TEAM_ALIASES[key] || [];
+  const aliases = findAliasesForTeam(team.name);
   const candidates = [team.name, team.shortName, ...aliases].filter(Boolean);
   return candidates.some((c) => normHaystack.includes(normalizeForMatch(c)));
 }
