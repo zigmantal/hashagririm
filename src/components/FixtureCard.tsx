@@ -88,7 +88,7 @@ export function FixtureCard({ fixture, onOpenChannelsGuide }: FixtureCardProps) 
                 onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
               />
               <div className="min-w-0">
-                <div className={`text-xs sm:text-sm font-extrabold truncate ${fixture.homeTeam.name === fixture.playerTeam ? 'text-blue-400' : 'text-slate-200'}`}>
+                <div className={`text-xs sm:text-sm font-extrabold truncate ${fixture.isHome ? 'text-blue-400' : 'text-slate-200'}`}>
                   {fixture.homeTeam.name}
                 </div>
                 <div className="text-[10px] font-medium text-slate-400">
@@ -133,7 +133,7 @@ export function FixtureCard({ fixture, onOpenChannelsGuide }: FixtureCardProps) 
             {/* Away Team */}
             <div className="col-span-3 flex items-center justify-end gap-2.5 text-right">
               <div className="min-w-0">
-                <div className={`text-xs sm:text-sm font-extrabold truncate ${fixture.awayTeam.name === fixture.playerTeam ? 'text-blue-400' : 'text-slate-200'}`}>
+                <div className={`text-xs sm:text-sm font-extrabold truncate ${!fixture.isHome ? 'text-blue-400' : 'text-slate-200'}`}>
                   {fixture.awayTeam.name}
                 </div>
                 <div className="text-[10px] font-medium text-slate-400">
