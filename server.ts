@@ -453,7 +453,6 @@ async function startServer() {
         sources: {
           espn: allFixtures.filter(f => f.dataSource === 'espn_live').length,
           searchGrounded: allFixtures.filter(f => f.dataSource === 'search_grounded').length,
-          calendar: allFixtures.filter(f => f.dataSource === 'official_calendar').length,
         },
         fixtures: allFixtures,
       });
