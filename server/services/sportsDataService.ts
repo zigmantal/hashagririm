@@ -662,7 +662,14 @@ export async function fetchPlayerFixtures(player: Player, forceRefresh = false):
     console.warn(`[SportsDataService] Yes broadcast resolution failed for ${player.name}:`, err);
   }
 
-  fixturesCache.set(cacheKey, { fixtures, timestamp: Date.now() });
+  if (fixtures.length === 0) {
+    console.info(`[SportsDataService] No real fixtures found for ${player.name} (${player.currentTeam}, ${player.league}) from TheSportsDB, ESPN or Gemini search.`);
+  }
+
+  // Cache empty results only briefly so a transient source failure (timeout, Gemini quota) recovers quickly.
+  const EMPTY_RESULT_TTL_MS = 2 * 60 * 1000;
+  const timestamp = fixtures.length > 0 ? Date.now() : Date.now() - (CACHE_TTL_MS - EMPTY_RESULT_TTL_MS);
+  fixturesCache.set(cacheKey, { fixtures, timestamp });
   return fixtures;
 }
 
