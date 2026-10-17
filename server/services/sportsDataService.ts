@@ -2317,14 +2317,18 @@ function generateGenericTeamFixtures(player: Player): MatchFixture[] {
     }
   }
 
-  const intervals = [1, 3, 5, 7, 9];
+  // Template fixtures are placeholders: never repeat an opponent, and space
+  // matches roughly a week apart with varied kickoff slots so they don't look like a real (and impossible) schedule.
+  const validOpponents = (() => {
+    const filtered = defaultOpponents.filter(o => o.name.toLowerCase() !== (player.currentTeam || '').toLowerCase());
+    return filtered.length > 0 ? filtered : defaultOpponents;
+  })();
+  const intervals = [3, 10, 17, 24, 31].slice(0, validOpponents.length);
+  const KICKOFF_SLOTS_UTC: Array<[number, number]> = [[19, 45], [17, 30], [16, 0], [18, 0], [19, 30]];
 
   intervals.forEach((days, index) => {
-    // Filter out opponent if identical to player's current team
-    let validOpponents = defaultOpponents.filter(o => o.name.toLowerCase() !== player.currentTeam.toLowerCase());
-    if (validOpponents.length === 0) validOpponents = defaultOpponents;
-    const opp = validOpponents[index % validOpponents.length];
-    
+    const opp = validOpponents[index];
+
     const isHome = index % 2 === 0;
     const matchDate = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
     
@@ -2336,7 +2340,8 @@ function generateGenericTeamFixtures(player: Player): MatchFixture[] {
     } else if (leagueLower.includes('euroleague') || isBasketball) {
       matchDate.setUTCHours(19, 0, 0, 0); // approx 21:00 IDT
     } else {
-      matchDate.setUTCHours(19, 45, 0, 0); // approx 21:45 IDT
+      const [h, m] = KICKOFF_SLOTS_UTC[index % KICKOFF_SLOTS_UTC.length];
+      matchDate.setUTCHours(h, m, 0, 0);
     }
 
     const homeTeam = isHome ? {
