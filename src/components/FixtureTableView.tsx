@@ -22,7 +22,6 @@ const SOURCE_LABEL: Record<string, string> = {
   sportsdb_live: 'S',
   espn_live: 'E',
   search_grounded: 'G',
-  official_calendar: 'T',
 };
 
 export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
@@ -218,7 +217,7 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
 
       {/* Data-source legend */}
       <div className="text-[10px] text-slate-500 px-1 pt-1">
-        Source: S = TheSportsDB, E = ESPN, G = Gemini search, T = template fallback
+        Source: S = TheSportsDB, E = ESPN, G = Gemini search
       </div>
     </div>
   );
