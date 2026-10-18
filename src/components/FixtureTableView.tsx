@@ -134,7 +134,7 @@ export function FixtureTableView({ fixtures }: FixtureTableViewProps) {
                         <span className="inline-block text-[8px] font-black uppercase text-rose-400 animate-pulse">
                           {fixture.liveScore ? `${playerScore}-${opponentScore} • LIVE` : 'LIVE'}
                         </span>
-                      ) : (fixture.liveScore || (fixture.homeTeam.score !== undefined && fixture.awayTeam.score !== undefined)) ? (
+                      ) : (fixture.status === 'finished' && (fixture.liveScore || (fixture.homeTeam.score !== undefined && fixture.awayTeam.score !== undefined))) ? (
                         <span className="inline-block text-[8px] font-black uppercase text-emerald-400">
                           {playerScore}-{opponentScore} • FT
                         </span>
