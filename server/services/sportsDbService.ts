@@ -94,7 +94,7 @@ export async function searchPlayerOnTheSportsDb(playerName: string): Promise<{
 } | null> {
   try {
     const cleanName = playerName.trim();
-    const url = `https://www.thesportsdb.com/api/v1/json/3/searchplayers.php?p=${encodeURIComponent(cleanName)}`;
+    const url = `https://www.thesportsdb.com/api/v1/json/${TSDB_KEY}/searchplayers.php?p=${encodeURIComponent(cleanName)}`;
     
     const res = await fetch(url, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
     if (!res.ok) return null;
@@ -115,7 +115,7 @@ export async function searchPlayerOnTheSportsDb(playerName: string): Promise<{
 
     if (p.strTeam) {
       try {
-        const teamUrl = `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(p.strTeam)}`;
+        const teamUrl = `https://www.thesportsdb.com/api/v1/json/${TSDB_KEY}/searchteams.php?t=${encodeURIComponent(p.strTeam)}`;
         const teamRes = await fetch(teamUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
         if (teamRes.ok) {
           const teamData = await teamRes.json();
@@ -167,6 +167,34 @@ export async function searchPlayerOnTheSportsDb(playerName: string): Promise<{
 /**
  * Fetches real upcoming official match events from TheSportsDB
  */
+// TheSportsDB public test key is "123" (older docs say "3"); override with THESPORTSDB_API_KEY if you have a premium key.
+const TSDB_KEY = process.env.THESPORTSDB_API_KEY || '123';
+// Free tier allows ~30 requests/minute. Keep a sliding window and give up (so callers fall back to ESPN)
+// instead of blocking page loads when the budget is exhausted.
+const TSDB_MAX_PER_MINUTE = 25;
+const TSDB_MAX_WAIT_MS = 8000;
+const tsdbCallTimes: number[] = [];
+
+async function tsdbFetch(url: string): Promise<Response | null> {
+  const now = Date.now();
+  while (tsdbCallTimes.length && now - tsdbCallTimes[0] > 60000) tsdbCallTimes.shift();
+  if (tsdbCallTimes.length >= TSDB_MAX_PER_MINUTE) {
+    const wait = tsdbCallTimes[0] + 60000 - now;
+    if (wait > TSDB_MAX_WAIT_MS) {
+      console.warn(`[TheSportsDB] Local rate budget exhausted (${TSDB_MAX_PER_MINUTE}/min); skipping ${url}`);
+      return null;
+    }
+    await new Promise(r => setTimeout(r, wait));
+  }
+  tsdbCallTimes.push(Date.now());
+  const res = await fetch(url, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
+  if (!res.ok) console.warn(`[TheSportsDB] HTTP ${res.status} for ${url}`);
+  return res;
+}
+
+const tsdbTeamCache = new Map<string, { team: any; timestamp: number }>();
+const TSDB_TEAM_TTL_MS = 24 * 60 * 60 * 1000;
+
 export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<MatchFixture[] | null> {
   try {
     if (!player.currentTeam || player.currentTeam === 'Free Agent' || player.currentTeam.includes('International Pro Club')) {
@@ -174,14 +202,26 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
     }
 
     // 1. Search team ID
-    const teamUrl = `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(player.currentTeam)}`;
-    const teamRes = await fetch(teamUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
-    if (!teamRes.ok) return null;
+    const teamUrl = `https://www.thesportsdb.com/api/v1/json/${TSDB_KEY}/searchteams.php?t=${encodeURIComponent(player.currentTeam)}`;
+    const teamKey = player.currentTeam.toLowerCase().trim();
+    let team: TheSportsDbTeam;
+    const cachedTeam = tsdbTeamCache.get(teamKey);
+    if (cachedTeam && Date.now() - cachedTeam.timestamp < TSDB_TEAM_TTL_MS) {
+      team = cachedTeam.team;
+    } else {
+      const teamRes = await tsdbFetch(teamUrl);
+      if (!teamRes || !teamRes.ok) return null;
 
-    const teamData = await teamRes.json();
-    if (!teamData.teams || teamData.teams.length === 0) return null;
-
-    const team: TheSportsDbTeam = teamData.teams[0];
+      const teamData = await teamRes.json();
+      if (!teamData.teams || teamData.teams.length === 0) {
+        console.warn(`[TheSportsDB] No team found for "${player.currentTeam}"`);
+        return null;
+      }
+      // Prefer a team in the player's sport over the first search hit
+      const wantSport = player.sport === 'basketball' ? 'basketball' : 'soccer';
+      team = teamData.teams.find((t: any) => (t.strSport || '').toLowerCase() === wantSport) || teamData.teams[0];
+      tsdbTeamCache.set(teamKey, { team, timestamp: Date.now() });
+    }
     const teamId = team.idTeam;
 
     // 2. Fetch both upcoming events and recent events
@@ -189,9 +229,9 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
 
     // Next upcoming events
     try {
-      const eventsUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
-      const evRes = await fetch(eventsUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
-      if (evRes.ok) {
+      const eventsUrl = `https://www.thesportsdb.com/api/v1/json/${TSDB_KEY}/eventsnext.php?id=${teamId}`;
+      const evRes = await tsdbFetch(eventsUrl);
+      if (evRes && evRes.ok) {
         const evData = await evRes.json();
         if (evData.events && Array.isArray(evData.events)) {
           rawEvents.push(...evData.events);
@@ -203,9 +243,9 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
 
     // Last recent events (to capture games completed today or within last 3 days)
     try {
-      const lastUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
-      const lastRes = await fetch(lastUrl, { headers: { 'User-Agent': 'SportsSyncElite/1.0' } });
-      if (lastRes.ok) {
+      const lastUrl = `https://www.thesportsdb.com/api/v1/json/${TSDB_KEY}/eventslast.php?id=${teamId}`;
+      const lastRes = await tsdbFetch(lastUrl);
+      if (lastRes && lastRes.ok) {
         const lastData = await lastRes.json();
         const results = lastData.results || lastData.events;
         if (results && Array.isArray(results)) {
@@ -231,6 +271,7 @@ export async function fetchTheSportsDbUpcomingEvents(player: Player): Promise<Ma
     const events = Array.from(uniqueEventsMap.values()).slice(0, 8);
 
     if (events.length === 0) {
+      console.warn(`[TheSportsDB] Team ${team.strTeam} (${teamId}) returned no events`);
       return null;
     }
 
