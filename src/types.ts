@@ -114,7 +114,7 @@ export interface MatchFixture {
     away: number;
     period?: string;
   };
-  dataSource?: 'sportsdb_live' | 'espn_live' | 'search_grounded';
+  dataSource?: 'sportsdb_live' | 'espn_live' | 'search_grounded' | 'official_calendar';
   notes?: string;
   ticketUrl?: string;
   importanceLevel?: 'high' | 'medium' | 'derby' | 'championship' | 'standard';
