@@ -603,6 +603,46 @@ export async function lookupAthleteDetails(athleteName: string): Promise<{
   };
 }
 
+const TEAM_NAME_NOISE = new Set(['fc', 'cf', 'afc', 'sc', 'ac', 'as', 'cd', 'ud', 'sd', 'club', 'de', 'the', 'united', 'city', 'real', 'hapoel', 'maccabi', 'beitar']);
+
+function opponentTokens(name: string): string[] {
+  return (name || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1);
+}
+
+/** True when two team names plausibly refer to the same club ("Real Madrid" vs "Real Madrid CF"). */
+function sameClub(a: string, b: string): boolean {
+  const ta = opponentTokens(a), tb = opponentTokens(b);
+  if (ta.length === 0 || tb.length === 0) return false;
+  if (ta.join(' ') === tb.join(' ')) return true;
+  const sa = ta.filter(t => !TEAM_NAME_NOISE.has(t)), sb = tb.filter(t => !TEAM_NAME_NOISE.has(t));
+  const ca = sa.length ? sa : ta, cb = sb.length ? sb : tb;
+  return ca.some(t => cb.includes(t));
+}
+
+/**
+ * Merge fixture lists from several sources, earliest list wins on duplicates. Two fixtures are the same
+ * game when kickoffs are within 12h and the opponents are the same club. Result is sorted by kickoff.
+ */
+export function mergeFixtureLists(lists: Array<MatchFixture[] | null | undefined>): MatchFixture[] {
+  const merged: MatchFixture[] = [];
+  for (const list of lists) {
+    for (const f of list || []) {
+      const t = new Date(f.dateTimeUtc).getTime();
+      const dup = merged.some(m =>
+        Math.abs(new Date(m.dateTimeUtc).getTime() - t) < 12 * 60 * 60 * 1000 &&
+        sameClub(m.opponentTeam.name, f.opponentTeam.name)
+      );
+      if (!dup) merged.push(f);
+    }
+  }
+  return merged.sort((x, y) => new Date(x.dateTimeUtc).getTime() - new Date(y.dateTimeUtc).getTime());
+}
+
 export async function fetchPlayerFixtures(player: Player, forceRefresh = false): Promise<MatchFixture[]> {
   const cacheKey = `fixtures-${player.id}`;
   const cached = fixturesCache.get(cacheKey);
@@ -611,38 +651,33 @@ export async function fetchPlayerFixtures(player: Player, forceRefresh = false):
     return cached.fixtures;
   }
 
-  let fixtures: MatchFixture[] = [];
+  // Query TheSportsDB and ESPN in parallel and MERGE them. Previously the first source that returned
+  // anything won, so a source that only knew about 1-2 games hid the rest of the week.
+  const [tsdbResult, espnResult] = await Promise.allSettled([
+    fetchTheSportsDbUpcomingEvents(player),
+    fetchEspnLiveSchedule(player),
+  ]);
+  if (tsdbResult.status === 'rejected') console.warn(`TheSportsDB API failure for ${player.name}:`, tsdbResult.reason);
+  if (espnResult.status === 'rejected') console.warn(`ESPN API failure for ${player.name}:`, espnResult.reason);
 
-  // 1. Attempt TheSportsDB Official Live Event Schedule API
-  if (fixtures.length === 0) {
-    try {
-      const tsdbFixtures = await fetchTheSportsDbUpcomingEvents(player);
-      if (tsdbFixtures && tsdbFixtures.length > 0) {
-        fixtures = tsdbFixtures;
-      }
-    } catch (err) {
-      console.warn(`TheSportsDB API fallback for ${player.name}:`, err);
-    }
-  }
+  // Priority on duplicates: TheSportsDB (most accurate), then ESPN.
+  let fixtures: MatchFixture[] = mergeFixtureLists([
+    tsdbResult.status === 'fulfilled' ? tsdbResult.value : null,
+    espnResult.status === 'fulfilled' ? espnResult.value : null,
+  ]);
 
-  // 2. Attempt High-Speed Live ESPN Official Schedule / Scoreboard API
-  if (fixtures.length === 0) {
-    try {
-      const espnFixtures = await fetchEspnLiveSchedule(player);
-      if (espnFixtures && espnFixtures.length > 0) {
-        fixtures = espnFixtures;
-      }
-    } catch (err) {
-      console.warn(`ESPN API fallback for ${player.name}:`, err);
-    }
-  }
-
-  // 3. Attempt Real-Time Google Search Grounding for unmapped / international leagues
-  if (fixtures.length === 0) {
+  // Google-search grounding is slow and quota-limited: only use it when the real feeds show nothing
+  // in the next 7 days.
+  const sevenDaysOut = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const hasUpcomingWeek = fixtures.some(f => {
+    const t = new Date(f.dateTimeUtc).getTime();
+    return t >= Date.now() - 3 * 60 * 60 * 1000 && t <= sevenDaysOut;
+  });
+  if (!hasUpcomingWeek) {
     try {
       const searchFixtures = await fetchSearchGroundedFixtures(player);
       if (searchFixtures && searchFixtures.length > 0) {
-        fixtures = searchFixtures;
+        fixtures = mergeFixtureLists([fixtures, searchFixtures]);
       }
     } catch (err) {
       console.warn(`Search grounding fallback for ${player.name}:`, err);
