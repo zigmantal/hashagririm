@@ -325,6 +325,12 @@ export async function fetchEspnLiveSchedule(player: Player): Promise<MatchFixtur
         status = 'finished';
       }
 
+      // ESPN reports "0" for both sides on games that haven't started; don't present that as a result.
+      if (status === 'scheduled') {
+        homeTeam.score = undefined;
+        awayTeam.score = undefined;
+      }
+
       // Venue
       const venueName = competition.venue?.fullName || competition.venue?.name || (isHome ? `${player.currentTeam} Arena` : `${opponentTeam.name} Stadium`);
       const venueCity = competition.venue?.address?.city || competition.venue?.city || '';
