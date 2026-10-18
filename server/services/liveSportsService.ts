@@ -159,9 +159,6 @@ function normalizeText(text: string): string {
   return (text || '').toLowerCase().trim().replace(/[-_]/g, ' ');
 }
 
-const espnTeamListCache = new Map<string, { teams: any[]; timestamp: number }>();
-const ESPN_TEAM_LIST_TTL_MS = 24 * 60 * 60 * 1000;
-
 function espnTeamNameMatches(team: any, normTeam: string): boolean {
   if (!team || !normTeam) return false;
   const names = [team.displayName, team.name, team.shortDisplayName, team.location, team.abbreviation]
@@ -170,26 +167,42 @@ function espnTeamNameMatches(team: any, normTeam: string): boolean {
   return names.some((n: string) => n === normTeam || (n.length >= 4 && (n.includes(normTeam) || normTeam.includes(n))));
 }
 
-/** Resolve an ESPN team id by name from the league's team list (cached 24h). Returns null on any failure. */
-async function resolveEspnTeamId(league: string, teamName: string): Promise<string | null> {
-  try {
-    let entry = espnTeamListCache.get(league);
-    if (!entry || Date.now() - entry.timestamp > ESPN_TEAM_LIST_TTL_MS) {
-      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${league}/teams?limit=500`, { headers: { 'Accept': 'application/json' } });
-      if (!res.ok) return null;
+const espnScoreboardCache = new Map<string, { events: any[]; timestamp: number }>();
+const espnScoreboardInFlight = new Map<string, Promise<any[]>>();
+const ESPN_SCOREBOARD_TTL_MS = 15 * 60 * 1000;
+
+function espnDayKey(d: Date): string {
+  return d.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/** One league's scoreboard for one day (YYYYMMDD). Cached 15 min, concurrent callers share one request. Never throws. */
+async function getEspnScoreboardDay(league: string, day: string): Promise<any[]> {
+  const key = `${league}|${day}`;
+  const cached = espnScoreboardCache.get(key);
+  if (cached && Date.now() - cached.timestamp < ESPN_SCOREBOARD_TTL_MS) return cached.events;
+  const inFlight = espnScoreboardInFlight.get(key);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(`https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?dates=${day}`, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) {
+        console.warn(`[ESPN] HTTP ${res.status} for ${league} ${day}`);
+        return [];
+      }
       const data = await res.json();
-      const teams = (data?.sports?.[0]?.leagues?.[0]?.teams || []).map((t: any) => t.team).filter(Boolean);
-      if (teams.length === 0) return null;
-      entry = { teams, timestamp: Date.now() };
-      espnTeamListCache.set(league, entry);
+      const events = Array.isArray(data.events) ? data.events : [];
+      espnScoreboardCache.set(key, { events, timestamp: Date.now() });
+      return events;
+    } catch (err) {
+      console.warn(`[ESPN] scoreboard fetch failed for ${league} ${day}:`, err);
+      return [];
+    } finally {
+      espnScoreboardInFlight.delete(key);
     }
-    const norm = normalizeText(teamName);
-    const exact = entry.teams.find((t: any) => [t.displayName, t.name, t.shortDisplayName].some((n: string) => n && normalizeText(n) === norm));
-    const found = exact || entry.teams.find((t: any) => espnTeamNameMatches(t, norm));
-    return found?.id ? String(found.id) : null;
-  } catch {
-    return null;
-  }
+  })();
+  espnScoreboardInFlight.set(key, promise);
+  return promise;
 }
 
 /**
@@ -209,51 +222,36 @@ export async function fetchEspnLiveSchedule(player: Player): Promise<MatchFixtur
       candidateLeagues.push(val);
     }
   }
+  // Football clubs may also be playing in a European competition that isn't named on the player record.
+  if (player.sport === 'football') {
+    for (const eu of ['soccer/uefa.champions', 'soccer/uefa.europa', 'soccer/uefa.europa.conf']) {
+      if (!candidateLeagues.includes(eu)) candidateLeagues.push(eu);
+    }
+  }
   if (candidateLeagues.length === 0) return null;
 
-  let espnLeague: string | null = null;
-
   try {
-    let rawEvents: any[] = [];
+    // ESPN rejects date ranges (HTTP 400) but accepts a single day, and its team-schedule endpoint does not
+    // return future games. So read each league's scoreboard one day at a time (cached and shared across players)
+    // for today..+7 days and keep the events involving this player's team.
+    const days: string[] = [];
+    for (let i = 0; i <= 7; i++) days.push(espnDayKey(new Date(Date.now() + i * 24 * 60 * 60 * 1000)));
 
-    for (const league of candidateLeagues) {
-      // Attempt 1: team schedule (team id from the static map, else resolved dynamically from ESPN's team list)
-      const teamId = known && known.league === league ? known.teamId : await resolveEspnTeamId(league, player.currentTeam);
-      if (teamId) {
-        const url = `https://site.api.espn.com/apis/site/v2/sports/${league}/teams/${teamId}/schedule`;
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.events) && data.events.length > 0) {
-            rawEvents = data.events;
-            espnLeague = league;
-            break;
-          }
-        }
-      }
-
-      // Attempt 2: league scoreboard over the next 21 days, filtered to the player's team
-      const fmt = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
-      const range = `${fmt(new Date())}-${fmt(new Date(Date.now() + 21 * 24 * 60 * 60 * 1000))}`;
-      const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/${league}/scoreboard?dates=${range}&limit=500`;
-      const res = await fetch(scoreboardUrl, { headers: { 'Accept': 'application/json' } });
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.events)) {
-          const matched = data.events.filter((e: any) => {
-            const evName = (e.name || '').toLowerCase();
-            const comp = e.competitions?.[0];
-            const hasTeam = comp?.competitors?.some((c: any) => espnTeamNameMatches(c.team, normTeam));
-            return hasTeam || evName.includes(normTeam);
-          });
-          if (matched.length > 0) {
-            rawEvents = matched;
-            espnLeague = league;
-            break;
-          }
-        }
+    const boards = await Promise.all(
+      candidateLeagues.flatMap(league => days.map(day => getEspnScoreboardDay(league, day)))
+    );
+    const seen = new Set<string>();
+    const rawEvents: any[] = [];
+    for (const events of boards) {
+      for (const e of events) {
+        const comp = e.competitions?.[0];
+        const hasTeam = comp?.competitors?.some((c: any) => espnTeamNameMatches(c.team, normTeam));
+        if (!hasTeam || seen.has(String(e.id))) continue;
+        seen.add(String(e.id));
+        rawEvents.push(e);
       }
     }
+    rawEvents.sort((x, y) => new Date(x.date).getTime() - new Date(y.date).getTime());
 
     if (rawEvents.length === 0) return null;
 
@@ -261,7 +259,7 @@ export async function fetchEspnLiveSchedule(player: Player): Promise<MatchFixtur
     const nowThreshold = new Date(Date.now() - 24 * 60 * 60 * 1000);
     let validEvents = rawEvents
       .filter((e: any) => new Date(e.date) >= nowThreshold)
-      .slice(0, 5);
+      .slice(0, 8);
 
     // If all scheduled season events in the feed have passed, take the most recent 3 official matches
     if (validEvents.length === 0 && rawEvents.length > 0) {
